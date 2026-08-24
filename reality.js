@@ -72,11 +72,25 @@ async function checkAddr(chainKey, addr, label) {
     if (sc) out.verified = !!sc.is_verified;
   }
   // verdict
-  if (out.code === false) out.verdict = (out.txs > 0 || out.native > 0) ? 'EOA' : 'DEAD';
-  else if (out.txs === null) out.verdict = out.native > 0 ? 'LIVE' : 'UNKNOWN';
-  else if (out.txs === 0 && out.native === 0 && (out.transfers || 0) === 0) out.verdict = 'THEATER';
-  else if (out.txs < 5 && out.native === 0) out.verdict = 'THIN';
-  else out.verdict = 'LIVE';
+  if (out.code === false) {
+    out.verdict = (out.txs > 0 || out.native > 0) ? 'EOA' : 'DEAD';
+  } else {
+    const active = (out.txs > 0) || (out.native > 0) || ((out.transfers || 0) > 0);
+    if (active) {
+      // barely-touched contract (a couple of txs, no value, no transfers) is THIN; otherwise LIVE
+      out.verdict = (out.txs !== null && out.txs < 5 && out.native === 0 && (out.transfers || 0) === 0) ? 'THIN' : 'LIVE';
+    } else if (out.verified === true) {
+      // A source-verified contract is REAL — even if the explorer's counters read 0. Base Blockscout's
+      // /counters under-reports (observed: an actively-indexed, verified factory returns txs=0), and proxy
+      // implementations legitimately take no *direct* calls. Never call a verified contract THEATER; flag
+      // it VERIFIED so the operator confirms the live entrypoint/TVL by hand instead of writing it off.
+      out.verdict = 'VERIFIED';
+    } else if (out.txs === null) {
+      out.verdict = 'UNKNOWN'; // no explorer on this chain and nothing else to go on
+    } else {
+      out.verdict = 'THEATER'; // unverified bytecode, zero txs / balance / transfers — deployed and never used
+    }
+  }
   return out;
 }
 
@@ -124,15 +138,17 @@ async function main() {
     const r = await checkAddr(jb.chain, jb.addr, jb.label);
     tally[r.verdict] = (tally[r.verdict] || 0) + 1;
     rows.push(r);
-    const flag = { THEATER: '🎭', DEAD: '💀', THIN: '🌱', LIVE: '✅', EOA: '👤', UNKNOWN: '❔', NO_CHAIN: '⏭️' }[r.verdict] || '?';
+    const flag = { THEATER: '🎭', DEAD: '💀', THIN: '🌱', LIVE: '✅', VERIFIED: '📗', EOA: '👤', UNKNOWN: '❔', NO_CHAIN: '⏭️' }[r.verdict] || '?';
     console.log(`${flag} ${r.verdict.padEnd(8)} ${jb.chain.padEnd(9)} ${jb.addr}  txs=${r.txs ?? '?'} bal=${r.native ?? '?'} verified=${r.verified ?? '?'}  ${jb.label}`);
   }
   console.log('\n== summary ==');
   for (const [k, v] of Object.entries(tally).sort((a,b)=>b[1]-a[1])) console.log(`  ${k}: ${v}`);
   // EOAs (deployer/funder wallets) are not protocol contracts — exclude from the contract verdict.
-  const real = (tally.LIVE || 0);
+  // VERIFIED contracts are real source (explorer counters may under-report) — count as real, not theater.
+  const real = (tally.LIVE || 0) + (tally.VERIFIED || 0);
   const fake = (tally.THEATER || 0) + (tally.DEAD || 0) + (tally.THIN || 0);
   if (tally.EOA) console.log(`  (${tally.EOA} EOA wallet(s) excluded from the contract verdict)`);
+  if (tally.VERIFIED) console.log(`  (${tally.VERIFIED} verified contract(s) with 0 counted activity — real source; confirm the live proxy/TVL by hand)`);
   // The decisive signal for a FUND-LOSS bounty: does any contract actually hold value?
   const contracts = rows.filter((r) => r.verdict !== 'EOA' && r.verdict !== 'NO_CHAIN');
   const held = contracts.reduce((s, r) => s + (r.native || 0), 0);

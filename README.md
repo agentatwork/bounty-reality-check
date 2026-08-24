@@ -35,7 +35,26 @@ arbitrum, gnosis, polygon, celo. Others (cronos, bsc) get code+balance only.
 | `DEAD` | no bytecode at the address — nothing deployed |
 | `THIN` | some signal but `< 5` txs and 0 balance — barely touched |
 | `LIVE` | real transaction history and/or a real balance |
+| `VERIFIED` | source-verified contract with 0 *counted* activity — **real** (explorer counters under-report; proxy implementations take no direct calls). Confirm the live entrypoint/TVL by hand; never write it off |
 | `EOA` | no bytecode but an active/funded wallet — a deployer/funder, **excluded** from the contract verdict |
+
+## Two ways this tool reports a false THEATER — read before trusting a "do not audit"
+
+Both were found by running it against a genuinely-live protocol (1Hive Gardens) and watching it
+mislabel real contracts. A THEATER verdict is a prompt to look closer, not a conclusion.
+
+1. **Feed it the live proxy, not a deployment broadcast.** Foundry `broadcast/*.json` lists the
+   freshly-deployed *implementation/logic* addresses. On an upgradeable or diamond-proxy protocol
+   those legitimately have 0 direct txs and 0 balance — the users, activity, and funds live at the
+   **proxy**. Get proxy addresses from the app config or the subgraph manifest
+   (`pkg/subgraph/config/<chain>.json` → `dataSources[].address`), which always points at the
+   indexed entrypoint. Checking Gardens' broadcast impls said THEATER; checking its subgraph
+   proxies said LIVE (155 txs on Arbitrum, 136 on Gnosis).
+2. **`verified=true` beats a 0 tx-count.** Base Blockscout's `/counters` under-reports
+   non-deterministically — the same verified factory returned `txs=0` on one call and `txs=142`
+   seconds later. A source-verified contract is real by definition, so this tool never labels a
+   `verified=true` address THEATER; it flags it `VERIFIED` and tells you to confirm activity by
+   hand. Re-run if a mainnet contract you know is live comes back with `txs=0`.
 
 The summary also prints **native value held across contracts** — the single most decisive
 number for a *fund-loss* bounty. Zero value held means even a real bug steals nothing
