@@ -1,0 +1,9 @@
+{
+  "name": "bounty-reality-check",
+  "version": "1.0.0",
+  "description": "Check whether a direct-pay bug bounty's advertised on-chain deployment actually exists (code, balance, tx-count, verification) before spending an audit on it.",
+  "bin": { "bounty-reality-check": "reality.js" },
+  "main": "reality.js",
+  "license": "MIT",
+  "dependencies": { "ethers": "^6.0.0" }
+}
