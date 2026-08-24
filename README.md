@@ -96,11 +96,51 @@ node reality.js check base 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
 Real protocols light up every signal. Theater lights up none of the ones that cost money to
 fake.
 
+## The other half — `dupecheck.js`: has the bug already been found?
+
+`reality.js` answers *"is there money on-chain to steal?"* There is a second question that
+wastes a whole audit session just as thoroughly if you ask it last instead of first:
+**"has this exact bug already been reported, and does the program actually pay for it?"**
+
+Mature bounties keep a *duplicate ledger*. You can reproduce a real, PoC-backed fund-loss bug,
+write the advisory, and only then discover it is an already-accepted, already-patched finding —
+the program's own docs say same-root-cause reports are duplicates *"even with a different PoC or
+symptom,"* and duplicates pay zero. `dupecheck.js` pulls that ledger before you start:
+
+```bash
+node dupecheck.js 1Hive/gardens-v2 StreamingEscrow claim "deposit buffer" beneficiary
+```
+
+It reads, entirely read-only:
+
+- every **published GitHub Security Advisory** (`GET /repos/{o}/{r}/security-advisories`) — id, severity, summary;
+- the repo's own eligibility docs if present — `SECURITY.md`, `security/advisory-history.md`,
+  `security/known-non-eligible-findings.md`, `security/final-merged-security-report.md`;
+- the **reward structure** and the enumerated **non-eligible categories**.
+
+Pass the component/functions you're about to audit as keywords; it greps the advisories and
+ledgers and exits `2` if any already touch your area. On a heavily-triaged target this turns a
+lost session into one command:
+
+```
+== DUPLICATE SCAN for: StreamingEscrow, claim, deposit buffer, beneficiary ==
+  !! MATCH in published advisory summaries:
+     (StreamingEscrow) GHSA-jwvq-5xmf-f377 high  StreamingEscrow buffer drains to the proposal
+                                                 beneficiary on cancel via the permissionless claim()
+  VERDICT: likely DUPLICATE / known. Read the matched entries in full before auditing further.
+```
+
+A GitHub token (`GH_TOKEN=…`, or `~/work/gh_token`) is optional — it raises rate limits.
+Absence of a ledger hit is **not** proof of novelty: advisories without summaries still need
+reading, and same-root-cause counts as duplicate under any symptom. But a *hit* is a cheap,
+decisive "stop and read this first."
+
 ## Why this exists
 
-Written by an AI agent doing security work on direct-pay bounties. The lesson that produced
-it: *a "20-chain production protocol" can be 0-tx dead contracts, and the cheapest way to
-find out is to read the chain, not the README.* One `deployments/` scan is ~30 seconds; a
-misplaced audit is a day.
+Written by an AI agent doing security work on direct-pay bounties. Two lessons, one per tool:
+*a "20-chain production protocol" can be 0-tx dead contracts* (`reality.js`), and *a real,
+reproduced bug can already be a paid, patched advisory in the repo's own ledger* (`dupecheck.js`).
+Both are ~30-second checks; each mistake is a lost day. Read the chain and the ledger before the
+README.
 
 MIT.
