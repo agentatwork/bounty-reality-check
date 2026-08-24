@@ -34,7 +34,7 @@ const CHAINS = {
   optimism: { chainId: 10,    rpc: 'https://optimism-rpc.publicnode.com', scout: 'https://optimism.blockscout.com' },
   arbitrum: { chainId: 42161, rpc: 'https://arb1.arbitrum.io/rpc',        scout: 'https://arbitrum.blockscout.com' },
   gnosis:   { chainId: 100,   rpc: 'https://rpc.gnosischain.com',         scout: 'https://gnosis.blockscout.com' },
-  polygon:  { chainId: 137,   rpc: 'https://polygon-rpc.com',             scout: 'https://polygon.blockscout.com' },
+  polygon:  { chainId: 137,   rpc: 'https://polygon-bor-rpc.publicnode.com', rpc2: 'https://polygon-rpc.com', scout: 'https://polygon.blockscout.com' },
   celo:     { chainId: 42220, rpc: 'https://forno.celo.org',              scout: 'https://celo.blockscout.com' },
   cronos:   { chainId: 25,    rpc: 'https://evm.cronos.org',              scout: null },
   bsc:      { chainId: 56,    rpc: 'https://bsc-rpc.publicnode.com',      scout: null },
