@@ -51,7 +51,7 @@ async function j(url, ms = 12000) {
 
 async function checkAddr(chainKey, addr, label) {
   const chain = CHAINS[chainKey];
-  const out = { chain: chainKey, addr, label, code: null, native: null, txs: null, transfers: null, verified: null, verdict: 'UNKNOWN' };
+  const out = { chain: chainKey, addr, label, code: null, native: null, txs: null, transfers: null, verified: null, verifiedSrc: null, verdict: 'UNKNOWN' };
   if (!chain) { out.verdict = 'NO_CHAIN'; return out; }
   // RPC: code + balance (works on every chain). Try primary then fallback so a flaky
   // endpoint can't make a real contract look codeless.
@@ -69,7 +69,18 @@ async function checkAddr(chainKey, addr, label) {
     const c = await j(`${chain.scout}/api/v2/addresses/${addr}/counters`);
     if (c) { out.txs = Number(c.transactions_count); out.transfers = Number(c.token_transfers_count); }
     const sc = await j(`${chain.scout}/api/v2/smart-contracts/${addr}`);
-    if (sc) out.verified = !!sc.is_verified;
+    if (sc) { out.verified = !!sc.is_verified; out.verifiedSrc = 'blockscout'; }
+  }
+  // Sourcify positive-confirm fallback (keyless, keyed by chainId, works even where there is no
+  // Blockscout). Blockscout's /smart-contracts endpoint 500s or omits is_verified even for clearly
+  // verified contracts (observed on Base) — that would blank the headline "is the source verified?"
+  // field on a paid deliverable. A Sourcify match is authoritative-POSITIVE; a miss is inconclusive
+  // (Sourcify is opt-in), so only ever UPGRADE verified null/false -> true, never downgrade.
+  if (out.verified !== true && out.code !== false) {
+    const sm = await j(`https://sourcify.dev/server/v2/contract/${chain.chainId}/${addr}`);
+    if (sm && (sm.match === 'exact_match' || sm.match === 'partial_match' || sm.creationMatch || sm.runtimeMatch)) {
+      out.verified = true; out.verifiedSrc = 'sourcify';
+    }
   }
   // verdict
   if (out.code === false) {
