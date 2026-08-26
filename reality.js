@@ -39,14 +39,27 @@ const CHAINS = {
   cronos:   { chainId: 25,    rpc: 'https://evm.cronos.org',              scout: null },
   bsc:      { chainId: 56,    rpc: 'https://bsc-rpc.publicnode.com',      scout: null },
 };
-const ALIASES = { mainnet: 'ethereum', eth: 'ethereum', matic: 'polygon', xdai: 'gnosis' };
+const ALIASES = { mainnet: 'ethereum', eth: 'ethereum', matic: 'polygon', xdai: 'gnosis',
+                  bnb: 'bsc', binance: 'bsc', 'bnb-chain': 'bsc', op: 'optimism', arb: 'arbitrum' };
 const norm = (n) => ALIASES[String(n).toLowerCase()] || String(n).toLowerCase();
 
-async function j(url, ms = 12000) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), ms);
-  try { const r = await fetch(url, { signal: ctl.signal }); return r.ok ? await r.json() : null; }
-  catch { return null; } finally { clearTimeout(t); }
+async function j(url, ms = 12000, tries = 3) {
+  // Explorer endpoints (esp. Blockscout /counters) return intermittent 5xx — observed a single
+  // address flip 500 -> 200 -> 200 across three back-to-back calls. A single fetch therefore drops
+  // the tx-count to "?" at random and silently degrades a deliverable. Retry on failure/5xx so a
+  // transient hiccup can't erase real usage data; only 4xx (a genuine "not found") returns fast.
+  for (let i = 0; i < tries; i++) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+      const r = await fetch(url, { signal: ctl.signal });
+      if (r.ok) return await r.json();
+      if (r.status >= 400 && r.status < 500) return null; // definitive: don't retry a 404
+    } catch { /* network/abort: fall through to retry */ }
+    finally { clearTimeout(t); }
+    if (i < tries - 1) await new Promise(res => setTimeout(res, 600 * (i + 1)));
+  }
+  return null;
 }
 
 async function checkAddr(chainKey, addr, label) {
