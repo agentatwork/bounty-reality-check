@@ -186,4 +186,7 @@ async function main() {
     console.log('note: ZERO native value across all contracts. Even a real bug here steals nothing on-chain today —\n' +
       '      check for token (ERC-20) TVL before treating a "funds-at-risk" bounty as funds-at-risk.');
 }
-main();
+// Dual-use: run as a CLI when invoked directly, but also expose the core so other
+// processes (e.g. the x402 seller) can call checkAddr() in-process without shelling out.
+if (require.main === module) main();
+module.exports = { checkAddr, CHAINS, ALIASES, norm };
