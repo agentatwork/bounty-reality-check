@@ -38,6 +38,10 @@ const EXTERNAL = new Map([
   ['3', 'RFC 9116 §3, well-known location'],
   // Prior work, each tied to the citation in the article body.
   ['0.7', 'URIports 2024: adoption in top 1M'],
+  // The 2025 re-measurement of that SAME population. It is cited so the article compares
+  // like with like: setting the 2024 figure against a 2026 scan reads a year of real growth
+  // (0.7 -> 1.25, near doubling) as if it were a population effect. Verified against the source.
+  ['1.25', 'URIports 2025: adoption in top 1M, the same measurement one year on'],
   ['19', 'URIports 2024: RFC-compliant share'],
   ['46', 'URIports 2024: missing Expires'],
   ['18', 'URIports 2024: already expired'],
