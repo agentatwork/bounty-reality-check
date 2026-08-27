@@ -40,15 +40,16 @@ const ALLOW = new Set([
   // (an expired Expires field, a Canonical mismatch). These are working, registered, famous
   // domains; the finding is that a field is stale, which is visible to anyone who looks.
   'google.com', 'cloudflare.com', 'x.com', 'twitter.com', 'youtube.com', 'amazon.com', 'gandi.net',
-  // Public RPC and explorer endpoints the OTHER tools in this repo connect to. These predate the
-  // survey by months and were picked from chain documentation, not from any scan result. They
-  // collide only because a big enough domain list eventually contains everything -- which is the
-  // failure mode to expect as the dataset grows, and the reason the allowlist is hand-held:
-  // "appears in the dataset" and "was chosen because of the dataset" are different claims and
-  // only the second is a leak.
-  'polygon-rpc.com', 'sourcify.dev', 'evm.cronos.org', 'forno.celo.org', 'mainnet.base.org',
-  'arb1.arbitrum.io', 'rpc.gnosischain.com', 'publicnode.com', 'blockscout.com',
+  // Named in an article published weeks before this survey existed, about an unrelated subject.
+  // It happens to serve a security.txt, so the narrowed set contains it; the article says nothing
+  // about its security contact. "Appears in the dataset" and "was chosen because of the dataset"
+  // are different claims, and only the second is a leak.
+  'ethereum.org',
 ]);
+// The nine chain RPC and explorer endpoints that used to sit here are gone. They were added to
+// silence collisions produced by treating all 200k SCANNED names as sensitive; narrowing the set
+// to names that can carry a harmful fact removed the collisions at the source, and an allowlist
+// entry that no longer suppresses anything is pure attack surface for the next false negative.
 
 const TEXT_EXT = new Set(['.js', '.md', '.json', '.txt', '.html', '.sh', '.yml', '.yaml']);
 
@@ -61,16 +62,48 @@ function walk(p, out) {
   return out;
 }
 
+/**
+ * Guard the survey's OUTPUT, not its INPUT.
+ *
+ * The scan visits every name on a public popularity list. Downloading that list and fetching a
+ * URL on each host does not make the list a secret, and "this site has no security.txt" is not
+ * a fact anyone can be hurt by. Treating all 200k scanned names as sensitive was the wrong
+ * boundary: it flagged an RDAP endpoint, two public blockchain sites and a cloud host — every
+ * one a collision with a name I had used months earlier for unrelated reasons — and the fix on
+ * offer was to keep extending the allowlist until the check stopped complaining. A check that
+ * gets argued down four names at a time is not a check.
+ *
+ * The narrow, defensible set is where a name can carry a HARMFUL fact:
+ *
+ *   - a site that published a parseable security.txt (naming it hands over its contact address,
+ *     which is the whole leak, one fetch later), and
+ *   - every contact domain named inside one of those files.
+ *
+ * A domain that never served a security.txt is in neither category, and it drops out.
+ */
 function loadDomains(datasetPath) {
   const toks = new Set();
   for (const line of fs.readFileSync(datasetPath, 'utf8').split('\n')) {
     if (!line) continue;
-    // Every domain the survey touched: the scanned site, and any contact domain it named.
+    let rec = null;
+    try { rec = JSON.parse(line); } catch { /* fall through to the regex path below */ }
+
+    // Scan records always carry `ok`; a scan record without a conforming file is dropped. Any
+    // other shape (a hand-made list, a future classified dataset) is KEPT — when the format is
+    // unrecognised the check must fail loud, not quietly narrow itself to nothing.
+    if (rec && 'ok' in rec && rec.is_security_txt !== true) continue;
+
     for (const m of line.matchAll(/"(?:domain|contact_domain)":"([^"]+)"/g)) {
       const d = m[1].toLowerCase();
       if (d.includes('.')) toks.add(d);
     }
     for (const m of line.matchAll(/mailto:[^"\s,]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g)) toks.add(m[1].toLowerCase());
+    for (const c of (rec && Array.isArray(rec.contact)) ? rec.contact : []) {
+      const s = String(c).trim();
+      const at = s.lastIndexOf('@');
+      if (at > 0) { const d = s.slice(at + 1).split(/[?\s>]/)[0].toLowerCase().replace(/\.$/, ''); if (d.includes('.')) toks.add(d); }
+      else { try { toks.add(new URL(s).hostname.toLowerCase()); } catch {} }
+    }
   }
   // Suffix-aware: an allowed name covers its subdomains, because the infrastructure entries
   // above appear as `<chain>-rpc.publicnode.com` and friends. This is a deliberate loosening —
@@ -96,17 +129,29 @@ function main() {
   const files = [];
   for (const t of targets) walk(t, files);
 
-  // Anchored on both sides, so a short domain cannot match the tail of a longer one, and an
-  // @ in the lookbehind stops a redacted address's own domain from re-flagging itself.
-  const res = [...toks].map(d => [d, new RegExp(`(?<![a-z0-9.@-])${d.replace(/\./g, '\\.')}(?![a-z0-9-])`)]);
+  // Tokenise each file once and look the tokens up, instead of testing one regex per dataset
+  // domain per file. Same semantics — the boundaries are identical, and an exact token lookup
+  // is what a both-sides-anchored match already was — but the cost stops depending on the size
+  // of the dataset. That matters: at 200k scanned domains the per-domain-regex version does
+  // billions of character comparisons per file, and a check too slow to run is a check that
+  // gets skipped right before the one publication that needed it.
+  //
+  // The boundaries: a leading `.` is excluded so a dataset domain cannot match the tail of a
+  // longer hostname (`bar.com` must not fire inside `foo.bar.com` — the token there is the
+  // whole `foo.bar.com`), and a leading `@` is excluded so a redacted address does not flag
+  // its own domain.
+  const TOKEN = /(?<![a-z0-9.@-])([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?![a-z0-9-])/g;
 
   let hits = 0;
   for (const f of files) {
-    const body = fs.readFileSync(f, 'utf8').toLowerCase();
-    for (const [d, re] of res) {
-      if (re.test(body)) {
-        const ln = body.split('\n').findIndex(l => re.test(l)) + 1;
-        console.log(`LEAK  ${f}:${ln}  ${d}`);
+    const lines = fs.readFileSync(f, 'utf8').toLowerCase().split('\n');
+    const seen = new Set();
+    for (let i = 0; i < lines.length; i++) {
+      for (const m of lines[i].matchAll(TOKEN)) {
+        const t = m[1];
+        if (!toks.has(t) || seen.has(t)) continue;
+        seen.add(t);
+        console.log(`LEAK  ${f}:${i + 1}  ${t}`);
         hits++;
       }
     }

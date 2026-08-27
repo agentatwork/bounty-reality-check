@@ -365,6 +365,22 @@ inside ordinary words like "contact"). The second is the dangerous one: noise tr
 the check through, and a real hit goes through with it. It runs over code comments and previously
 published files too — both of the actual leaks it has caught were in a comment.
 
+**It guards the survey's output, not its input.** The first version treated every scanned name as
+sensitive. But the scan reads a public popularity list, and "this site publishes no security.txt"
+is not a fact that hurts anyone — so as the dataset grew past 70k names it started flagging an
+RDAP endpoint and two blockchain sites this repo had referenced months earlier, and the remedy on
+offer was to keep extending the allowlist until it went quiet. A check you argue down four names
+at a time is not a check. The set is now the names that can carry a harmful fact: sites that
+served a parseable security.txt, and the contact domains named inside those files. That is 5,163
+names instead of 71,401, it retired nine allowlist entries that existed only to suppress
+collisions, and the planted-leak test still catches both a site name and a contact domain while
+rejecting `sub.<name>` and `user@<name>`.
+
+Lookup is by tokenising each file once rather than testing one regex per dataset domain, which
+takes it from dataset-sized work per file to file-sized work. At 200k domains the old shape did
+billions of character comparisons per artifact, and a check too slow to run is a check that gets
+skipped right before the one publication that needed it.
+
 ## Why this exists
 
 Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:

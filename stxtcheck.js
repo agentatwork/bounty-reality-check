@@ -14,7 +14,8 @@
  *   0  all contacts reachable
  *   1  no security.txt, or it does not parse
  *   2  a contact domain is UNREGISTERED — anyone can claim it and collect your reports
- *   3  a contact is broken but not claimable (dead subdomain, null MX, portal gone)
+ *   3  a contact is broken but not claimable (dead subdomain, null MX, portal gone), or
+ *      nothing verifiable answered at all
  *   4  file is valid but expired, or Expires is missing (RFC 9116 requires it)
  *
  * Read-only. Nothing is registered, and no report address is written to.
@@ -118,12 +119,18 @@ async function main() {
     || (r.portal && r.portal.why === 'page_gone'));
   const working = rows.filter(r => ['LIVE-MX', 'IMPLICIT-A'].includes(r.verdict)
     || (r.verdict === 'RESOLVES' && r.portal && r.portal.reachable));
+  // A tel: contact is a real RFC 9116 contact that this tool cannot verify — no domain to
+  // resolve, and nobody is dialling it from here. It must not count as a working contact and
+  // must not count as a broken one either, so it is excluded from the denominator entirely.
+  const verifiable = rows.filter(r => r.contact_domain);
+  const noWorking = verifiable.length > 0 && working.length === 0;
 
   out.hijackable = hijack.length;
   out.broken = broken.length;
   out.working = working.length;
   out.result = hijack.length ? 'HIJACKABLE-CONTACT'
-    : !working.length ? 'NO-WORKING-CONTACT'
+    : noWorking ? 'NO-WORKING-CONTACT'
+    : !verifiable.length ? 'UNVERIFIABLE-CONTACT'
     : broken.length ? 'PARTIALLY-BROKEN'
     : (exp === 'expired' || exp === 'missing') ? 'STALE' : 'OK';
 
@@ -160,7 +167,13 @@ async function main() {
     console.log('');
   }
 
-  process.exit(hijack.length ? 2 : broken.length ? 3 : (exp === 'expired' || exp === 'missing') ? 4 : 0);
+  // `noWorking` has to gate exit 3 alongside `broken`, or the documented meaning of exit 0 is
+  // false. A portal that times out is not `page_gone`, so it lands in neither list: without this
+  // clause a site whose only contact never answered would print NO-WORKING-CONTACT and exit 0,
+  // "all contacts reachable". The error ran in the direction that makes the tool look reassuring.
+  process.exit(hijack.length ? 2
+    : (broken.length || noWorking) ? 3
+    : (exp === 'expired' || exp === 'missing') ? 4 : 0);
 }
 
 main().catch(e => { console.error('error:', e.message); process.exit(1); });
