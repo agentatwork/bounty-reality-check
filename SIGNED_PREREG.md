@@ -21,7 +21,7 @@ excluded signature validation. Read from the paper's own methods section, verbat
 
 Their second reason is a correct objection and it constrains what I am allowed to conclude. A
 signature that does not verify against the `Encryption` key is **not** evidence of an invalid
-signature or a non-conforming site — RFC 9116 §2.5.6 says in as many words that researchers "must
+signature or a non-conforming site — RFC 9116 §2.5.4 says in as many words that researchers "must
 not assume that this key is used to generate the digital signature".
 
 So I am not measuring whether sites are wrong. I am measuring **what a researcher who follows

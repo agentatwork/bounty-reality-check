@@ -79,7 +79,7 @@ check('fieldsOf: comments and blanks ignored, names lowercased, repeats kept',
   lib.fieldsOf('# a comment\n\nContact: mailto:a@example.com\ncontact: https://example.com/report\nExpires: 2030-01-01T00:00:00Z\nnot a field line\n'),
   { contact: ['mailto:a@example.com', 'https://example.com/report'], expires: ['2030-01-01T00:00:00Z'] });
 
-// ---------------------------------------------------------------- Encryption forms (§2.5.6)
+// ---------------------------------------------------------------- Encryption forms (§2.5.4)
 for (const [v, want] of [
   ['https://example.com/pgp-key.txt', 'https'],
   ['http://example.com/pgp-key.txt', 'http_violates_2_5_6'],
@@ -112,7 +112,7 @@ const VERDICTS = [
   ['bad signature outranks a missing Canonical', { signed: true, parseable: true, canonical: false,
     has_http_key_url: true, key: { verified: false, verify: 'bad_signature', same_origin: false } },
     ['BAD-SIGNATURE', 2]],
-  // §2.5.6 permits signing with a key that appears nowhere in the file, so this is never the
+  // §2.5.4 permits signing with a key that appears nowhere in the file, so this is never the
   // site's error — it is reported as "you cannot check this", not "they got it wrong".
   ['issuer is not the published key', { signed: true, parseable: true, canonical: true, has_http_key_url: true,
     key: { verified: false, verify: 'no_matching_key', fetch: 'ok' } }, ['UNVERIFIABLE', 3]],

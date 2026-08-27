@@ -6,7 +6,7 @@
  *   node sigcheck.js example.com --json
  *
  * RFC 9116 §2.3 RECOMMENDs an OpenPGP cleartext signature and §5.1 tells researchers to verify it.
- * The standard then specifies no way to obtain the verification key: §2.5.6's `Encryption` field is
+ * The standard then specifies no way to obtain the verification key: §2.5.4's `Encryption` field is
  * for encrypting the report you send back, with an explicit warning that researchers "must not
  * assume that this key is used to generate the digital signature".
  *

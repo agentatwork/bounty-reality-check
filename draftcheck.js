@@ -115,13 +115,16 @@ const EXTERNAL = new Map([
   // Sections of RFC 9116 the signed-file article argues from, each opened in rfc9116.txt before
   // being added here. §2.3 is the one that RECOMMENDs a signature and, in the same breath,
   // RECOMMENDs Canonical "thus allowing the digital signature to authenticate the location of the
-  // file"; §5.1 is the instruction to researchers to verify it; §2.5.6 is the warning that the
+  // file"; §5.1 is the instruction to researchers to verify it; §2.5.4 is the warning that the
   // Encryption key must not be assumed to be the signing key. The article's thesis is that those
   // three sentences leave no specified way to obtain the verification key, so a mistyped section
   // number here would be a mistyped load-bearing citation.
   ['2.3', 'RFC 9116 §2.3, Encryption/signature recommendation'],
   ['5.1', 'RFC 9116 §5.1, advice to security researchers'],
-  ['2.5.6', 'RFC 9116 §2.5.6, Encryption field'],
+  ['2.5.4', 'RFC 9116 §2.5.4, Encryption field'],
+  // Cited only in the correction note: the first published version put Encryption at §2.5.6,
+  // which is Hiring. Registered so the note that names the wrong section still passes the gate.
+  ['2.5.6', 'RFC 9116 §2.5.6, Hiring — the section the first version misattributed'],
   // §4 is the ABNF. It shares a key with the exit-code entry below — the Map keeps the last
   // value, and both are whitelist entries, so the effect is the same; the note is here so the
   // citation is not silently unaccounted for.

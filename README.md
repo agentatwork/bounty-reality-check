@@ -559,7 +559,7 @@ provably unable to change any output — with the evidence for that rather than 
 `stxtcheck.js` asks whether the contacts in a security.txt still reach anyone. This asks the other
 question the file invites: RFC 9116 §2.3 RECOMMENDs an OpenPGP cleartext signature and §5.1 tells
 researchers to verify it — and then specifies no field, location or procedure for obtaining the
-verification key. The one key the file can carry, §2.5.6's `Encryption`, is defined for encrypting
+verification key. The one key the file can carry, §2.5.4's `Encryption`, is defined for encrypting
 the reply, with an explicit warning that a researcher "must not assume that this key is used to
 generate the digital signature".
 

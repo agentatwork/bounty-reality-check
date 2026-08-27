@@ -93,7 +93,7 @@ function withHome(fn) {
 }
 
 // Who made this signature, read off the packet. No key required, so this does not assume the
-// Encryption key is the signing key — RFC 9116 §2.5.6 says not to, and this is the whole reason
+// Encryption key is the signing key — RFC 9116 §2.5.4 says not to, and this is the whole reason
 // the measurement is possible without making that assumption.
 function signatureIssuer(signatureArmor) {
   return withHome((home) => {
@@ -189,7 +189,7 @@ function fieldsOf(text) {
   return out;
 }
 
-// RFC 9116 §2.5.6: the value MUST be a URI, and a web URI MUST begin with "https://". The other
+// RFC 9116 §2.5.4: the value MUST be a URI, and a web URI MUST begin with "https://". The other
 // two legal forms cannot be fetched over HTTP at all, so they are counted, not resolved.
 function encryptionKind(v) {
   if (/^https:\/\//i.test(v)) return 'https';
@@ -215,7 +215,7 @@ function hostOf(u) {
  * The precedence that matters: a BAD signature outranks everything, because it is the only state
  * that tells a researcher your file may have been tampered with. "Verifies, but circularly" is a
  * warning and not a pass, because a key served from the origin that served the file cannot testify
- * about that file. And an unverifiable signature is never reported as the site's error: §2.5.6
+ * about that file. And an unverifiable signature is never reported as the site's error: §2.5.4
  * permits signing with a key that appears nowhere in the file.
  *
  * `facts.key` is the best candidate among the published Encryption URLs, or null if none was
@@ -272,7 +272,7 @@ function sigVerdict(facts) {
   return { result: 'UNVERIFIABLE', exit: 3, detail:
     k.fetch && k.fetch !== 'ok' ? `your Encryption URL did not fetch (${k.fetch})`
     : k.key_error ? `your Encryption URL does not serve a key (${k.key_error})`
-      : 'the signature was made by a key that is not the one you publish — legal under §2.5.6, '
+      : 'the signature was made by a key that is not the one you publish — legal under §2.5.4, '
         + 'and it leaves a researcher with no way to check' };
 }
 

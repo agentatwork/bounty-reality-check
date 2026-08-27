@@ -3,7 +3,7 @@
 // Does a signed security.txt give a researcher anything they can actually check?
 //
 // RFC 9116 §2.3 RECOMMENDs an OpenPGP cleartext signature; §5.1 tells researchers to verify it.
-// §2.5.6 tells them not to assume the Encryption key is the signing key. Those three sentences
+// §2.5.4 tells them not to assume the Encryption key is the signing key. Those three sentences
 // together describe a researcher who has been told to verify something and told that the only key
 // in front of them might be the wrong one. This measures what that researcher can do.
 //
