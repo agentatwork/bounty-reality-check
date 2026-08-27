@@ -82,7 +82,7 @@ check('fieldsOf: comments and blanks ignored, names lowercased, repeats kept',
 // ---------------------------------------------------------------- Encryption forms (§2.5.4)
 for (const [v, want] of [
   ['https://example.com/pgp-key.txt', 'https'],
-  ['http://example.com/pgp-key.txt', 'http_violates_2_5_6'],
+  ['http://example.com/pgp-key.txt', 'http_violates_2_5_4'],
   ['dns:5d2d37ab76d47d36._openpgpkey.example.com?type=OPENPGPKEY', 'dns'],
   ['openpgp4fpr:5f2de5521c63a801ab59ccb603d49de44b29100f', 'openpgp4fpr'],
   ['security@example.com', 'other'],

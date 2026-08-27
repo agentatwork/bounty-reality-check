@@ -157,7 +157,7 @@ async function main() {
   const wanted = [];
   for (const s of signed) {
     for (const e of s.encryption) {
-      if (e.kind === 'https' || e.kind === 'http_violates_2_5_6') {
+      if (e.kind === 'https' || e.kind === 'http_violates_2_5_4') {
         if (!keyCache.has(e.value) && !wanted.includes(e.value)) wanted.push(e.value);
       }
     }
@@ -198,7 +198,7 @@ async function main() {
       verify: null,
     };
 
-    const fetchable = s.encryption.filter((e) => e.kind === 'https' || e.kind === 'http_violates_2_5_6');
+    const fetchable = s.encryption.filter((e) => e.kind === 'https' || e.kind === 'http_violates_2_5_4');
     if (!fetchable.length) {
       v.verify = s.encryption.length ? 'no_fetchable_key_published' : 'no_key_published';
       verdicts.push(v);

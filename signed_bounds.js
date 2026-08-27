@@ -54,7 +54,7 @@ bound('A ≤ 10% of analyzable files are signed',
 // 3. A key ID cannot coincide with a published key that was never published or never fetched.
 {
   const fetchable = R.verdicts.filter((v) => v.encryption_kinds.some(
-    (k) => k === 'https' || k === 'http_violates_2_5_6')).length;
+    (k) => k === 'https' || k === 'http_violates_2_5_4')).length;
   bound('D ≤ signed files that publish a fetchable key URL',
     A.issuer_in_published_key <= fetchable,
     `${A.issuer_in_published_key} coincide ≤ ${fetchable} publish a fetchable key`);

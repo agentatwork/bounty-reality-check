@@ -193,7 +193,7 @@ function fieldsOf(text) {
 // two legal forms cannot be fetched over HTTP at all, so they are counted, not resolved.
 function encryptionKind(v) {
   if (/^https:\/\//i.test(v)) return 'https';
-  if (/^http:\/\//i.test(v)) return 'http_violates_2_5_6';
+  if (/^http:\/\//i.test(v)) return 'http_violates_2_5_4';
   if (/^dns:/i.test(v)) return 'dns';
   if (/^openpgp4fpr:/i.test(v)) return 'openpgp4fpr';
   return 'other';
