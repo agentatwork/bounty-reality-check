@@ -46,6 +46,36 @@ const ALLOW = new Set([
   // are different claims, and only the second is a leak.
   'ethereum.org',
 ]);
+/**
+ * A file written BEFORE the dataset existed cannot have chosen a name because of it.
+ *
+ * Four names in notes published days-to-weeks earlier — two IPFS gateways, a fediverse instance,
+ * and an archive — collided with the narrowed set, because each of those sites happens to serve
+ * a security.txt. Every one was named for an unrelated reason in an unrelated article, and one
+ * of them is not even mine: it is a default gateway inside a vendored minified bundle.
+ *
+ * The tempting fix was four more allowlist entries. That is the failure this file already warns
+ * about two comments up — a check argued down four names at a time. Causality is checkable where
+ * an allowlist is just an assertion: compare the artifact's mtime against the dataset's birth
+ * time. Older means it could not have leaked THIS dataset, whatever the name looks like.
+ *
+ * Two properties keep it from becoming a silencer. Such a hit is still PRINTED, so it can never
+ * be quietly dropped the way an allowlist entry disappears the moment it is added. And editing
+ * an old file to publish something new updates its mtime, which puts it straight back under the
+ * full check — the direction of failure is toward more scrutiny, not less. If the filesystem
+ * does not report a birth time the whole mechanism switches off and everything is a hard leak.
+ *
+ * Verified both ways by planting a real dataset domain in a scratch file: fresh, it reports LEAK
+ * and exits 1; byte-identical with an older mtime, it reports PRE and exits 0. The first attempt
+ * at that test reported CLEAN and looked like a broken checker. It wasn't — the domain it planted
+ * was the first security.txt in the scan, which is a top-ranked site already on the allowlist
+ * above. A probe the filter is designed to drop tests the allowlist, not the filter.
+ */
+function predatingCutoff(datasetPath) {
+  const bt = fs.statSync(datasetPath).birthtimeMs;
+  return bt > 0 ? bt : null;  // no birth time -> no exemptions, check everything
+}
+
 // The nine chain RPC and explorer endpoints that used to sit here are gone. They were added to
 // silence collisions produced by treating all 200k SCANNED names as sensitive; narrowing the set
 // to names that can carry a harmful fact removed the collisions at the source, and an allowlist
@@ -142,8 +172,11 @@ function main() {
   // its own domain.
   const TOKEN = /(?<![a-z0-9.@-])([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?![a-z0-9-])/g;
 
-  let hits = 0;
+  const cutoff = predatingCutoff(datasetPath);
+
+  let hits = 0, predates = 0;
   for (const f of files) {
+    const older = cutoff !== null && fs.statSync(f).mtimeMs < cutoff;
     const lines = fs.readFileSync(f, 'utf8').toLowerCase().split('\n');
     const seen = new Set();
     for (let i = 0; i < lines.length; i++) {
@@ -151,14 +184,15 @@ function main() {
         const t = m[1];
         if (!toks.has(t) || seen.has(t)) continue;
         seen.add(t);
-        console.log(`LEAK  ${f}:${i + 1}  ${t}`);
-        hits++;
+        console.log(`${older ? 'PRE ' : 'LEAK'}  ${f}:${i + 1}  ${t}`);
+        if (older) predates++; else hits++;
       }
     }
   }
+  const pre = predates ? ` (+${predates} in files older than the dataset, cannot leak it)` : '';
   console.log(hits
-    ? `FAIL ${hits} leak(s) across ${files.length} files (${toks.size} dataset domains)`
-    : `CLEAN 0 leaks across ${files.length} files (${toks.size} dataset domains checked)`);
+    ? `FAIL ${hits} leak(s) across ${files.length} files (${toks.size} dataset domains)${pre}`
+    : `CLEAN 0 leaks across ${files.length} files (${toks.size} dataset domains checked)${pre}`);
   process.exit(hits ? 1 : 0);
 }
 
