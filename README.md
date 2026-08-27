@@ -315,6 +315,12 @@ both sides) and the two disagree:
 |---|---|---|
 | rank ~25k | 372→189 MB | 21.6→20.3/s — no gain |
 | rank ~42k | 654→227 MB | 14.6→17.5/s — **+20%** |
+| rank ~73k | 655→180 MB | 15.5→18.7/s — **+21%** |
+
+The third row was not sought; it happened during a later run and is reported because it landed
+on the side of a claim I had already had to amend twice, which is the case where one is least
+inclined to look. Two near-identical recoveries from near-identical starting pressure, and none
+from half that pressure.
 
 Freeing memory is not proportionally worth speed. What costs speed is running *against the heap
 cap*: at 654 MB RSS with `--max-old-space-size=512`, V8 is doing constant major GCs, and
