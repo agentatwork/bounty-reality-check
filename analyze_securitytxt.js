@@ -245,10 +245,16 @@ async function main() {
   const files = [];
   // Adoption needs a denominator PER BUCKET, so count every scanned domain, not just the hits.
   const scannedByBucket = {}, foundByBucket = {};
-  let viaWww = 0;
+  // Soft-404s: HTTP 200 at /.well-known/security.txt with a body that is not a conforming file.
+  // Tracked per bucket because a survey that counts status codes instead of parsing the body
+  // reports these as adoption, and the size of that error is not constant across the ranking.
+  const soft200ByBucket = {};
+  let viaWww = 0, apexNoAddress = 0;
   for (const r of byApex.values()) {
     const b = bucketOf(ranks.get(r._apex));
     scannedByBucket[b] = (scannedByBucket[b] || 0) + 1;
+    if (r.ok && !r.is_security_txt) soft200ByBucket[b] = (soft200ByBucket[b] || 0) + 1;
+    if (r.err === 'ENOTFOUND') apexNoAddress++;
     if (r.is_security_txt) {
       r._rank = ranks.get(r._apex) || null; r._bucket = b;
       files.push(r); foundByBucket[b] = (foundByBucket[b] || 0) + 1;
@@ -370,7 +376,10 @@ async function main() {
   }));
 
   const out = {
-    generated_from: inPath, scanned: lines.length, security_txt: files.length,
+    // `scanned` is DISTINCT SITES, not fetches: the www second pass probes some domains twice
+    // and both numbers are reported so a reader can never mistake one for the other.
+    generated_from: inPath, scanned: byApex.size, fetch_records: lines.length,
+    security_txt: files.length, found_only_via_www: viaWww, apex_no_address: apexNoAddress,
     distinct_contact_domains: domains.length, distinct_portal_urls: urlSet.size,
     sites: [],
   };
@@ -383,7 +392,14 @@ async function main() {
   out.adoption_by_bucket = {};
   for (const [name] of [...BUCKETS, ['unranked']]) {
     const s = scannedByBucket[name] || 0, f = foundByBucket[name] || 0;
-    if (s) out.adoption_by_bucket[name] = { scanned: s, security_txt: f, pct: +(100 * f / s).toFixed(2) };
+    const soft = soft200ByBucket[name] || 0;
+    if (s) out.adoption_by_bucket[name] = {
+      scanned: s, security_txt: f, pct: +(100 * f / s).toFixed(2),
+      // What a status-code-only survey would have reported here, and by what factor it is wrong.
+      http200_not_conforming: soft,
+      pct_if_counting_status_only: +(100 * (f + soft) / s).toFixed(2),
+      overcount_factor: f ? +((f + soft) / f).toFixed(2) : null,
+    };
   }
 
   for (const f of files) {
