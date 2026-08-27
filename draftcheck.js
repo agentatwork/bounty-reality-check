@@ -116,12 +116,24 @@ function main() {
     }
   }
 
-  // Skip fenced code blocks and link targets: a URL's digits and a shell example's numbers are
-  // not claims about the data, and flagging them is the kind of noise that gets a check ignored.
-  let inFence = false;
+  // Link targets and command examples are skipped: a URL's digits and a shell snippet's numbers
+  // are not claims about the data, and flagging them is the noise that gets a check ignored.
+  //
+  // But only fences tagged as CODE are skipped. The obvious rule — skip every fenced block —
+  // would have exempted the rank table, which is the centrepiece of this article and nothing but
+  // numbers. The one place a survey is most likely to mistype a figure would have been the one
+  // place nothing looked. An untagged or `text` fence is prose in a monospace font and is checked
+  // like prose.
+  const SKIP_LANGS = new Set(['sh', 'bash', 'shell', 'console', 'js', 'javascript', 'json', 'diff']);
+  let skipping = false, inFence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (/^```/.test(lines[i])) { inFence = !inFence; continue; }
-    if (inFence) continue;
+    const fence = lines[i].match(/^```+\s*([A-Za-z0-9_-]*)/);
+    if (fence) {
+      if (!inFence) { inFence = true; skipping = SKIP_LANGS.has(fence[1].toLowerCase()); }
+      else { inFence = false; skipping = false; }
+      continue;
+    }
+    if (skipping) continue;
     const prose = lines[i]
       .replace(/\]\([^)]*\)/g, ']()')          // link targets
       .replace(/`[^`]*`/g, '``')               // inline code
