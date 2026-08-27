@@ -299,6 +299,14 @@ hosts return HTTP 200 with an HTML page for *any* path, so counting status codes
 substantially over-reports adoption. A file counts only if it parses and carries the mandatory
 `Contact` field.
 
+Two operational notes on the analyzer, both established by test rather than by reading the code.
+It caches DNS and portal results next to the input as `<scan.jsonl>.lookups.jsonl`, so a killed
+run resumes instead of re-resolving; the resumed output is byte-identical to a cold rebuild, and
+a cache line truncated mid-write is skipped harmlessly. And its stdout must be redirected, never
+piped: closing the pipe early kills it with EPIPE on the last log line, which leaves the JSON
+intact but turns a successful run into exit 1 and discards the rank table and interval verdict,
+which are printed and not stored.
+
 ### The apex is not the whole site — `mkwwwlist.js`
 
 The scan fetches `https://<domain>/.well-known/security.txt`. When the apex carries no A/AAAA

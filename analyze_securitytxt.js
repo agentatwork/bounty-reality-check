@@ -20,6 +20,25 @@
  *   LIVE-MX / IMPLICIT-A / NULL-MX / NO-MAIL / DEAD-SUBDOMAIN / UNREGISTERED / INVALID-TLD
  *
  * Read-only. Nothing is registered, ever, and no address is contacted.
+ *
+ * TWO THINGS ABOUT RUNNING IT, both checked rather than assumed, because the run that produces
+ * the published numbers is the one where "just do it again" is most expensive.
+ *
+ * The DNS/portal cache resumes correctly. `<scan.jsonl>.lookups.jsonl` is appended as lookups
+ * complete, and reloaded on the next run. Verified on a 1,500-record slice: with the cache the
+ * run reuses 199 DNS + 120 portal results and produces output byte-identical to a cold rebuild;
+ * deleting it rebuilds all 319 in 38s at concurrency 2. A cache line truncated mid-write — the
+ * shape a kill actually leaves — is skipped by the parse guard, and the output is still
+ * identical. Note that 83 of 319 cached DNS answers differ from a fresh lookup: all 83 differ
+ * only in MX ordering or which subset of a round-robin the resolver returned, and none changes
+ * `state`, `hasMx`, `nullMx` or `hasA`. The analysis reads only those four, which is why the
+ * output is stable across runs and why an old cache is safe to reuse.
+ *
+ * Do NOT pipe stdout. `node analyze_securitytxt.js ... | head` makes the process die of EPIPE on
+ * its closing log line: the JSON is already written and is byte-identical, but the exit status
+ * becomes 1 and 40 of the 43 stdout lines are gone — including the rank table and the interval
+ * verdict, which exist nowhere else. A successful run that reports failure is the worse half of
+ * that. Redirect to a file (`> run.log 2>&1`) and read the file.
  */
 'use strict';
 const fs = require('fs');
