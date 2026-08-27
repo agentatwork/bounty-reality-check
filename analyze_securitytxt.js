@@ -47,7 +47,7 @@
 const fs = require('fs');
 const dns = require('dns');
 const { publicSuffixOf } = require('./psl');
-const { canonicalState } = require('./stxtlib');
+const { canonicalState, WORKING_VERDICTS, parseContact, emailVerdict, urlVerdict, expiryState } = require('./stxtlib');
 
 const [, , inPath, outPath, concArg, rankArg] = process.argv;
 if (!inPath || !outPath) {
@@ -177,50 +177,13 @@ async function domainFacts(domain) {
   return p;
 }
 
-/** Can this address receive mail? */
-function emailVerdict(f) {
-  if (f.state !== 'EXISTS') return f.state;
-  if (f.nullMx) return 'NULL-MX';                 // RFC 7505: declares it accepts no mail
-  if (f.hasMx) return 'LIVE-MX';
-  if (f.hasA) return 'IMPLICIT-A';                // RFC 5321 implicit MX — deliverable, but fragile
-  return 'NO-MAIL';
-}
-
-/** Can this portal be reached — and if not, can a stranger put one there? */
-function urlVerdict(f) {
-  if (f.state !== 'EXISTS') return f.state;
-  return f.hasA ? 'RESOLVES' : 'NO-ADDRESS';
-}
-
-function parseContact(raw) {
-  const v = String(raw).trim();
-  const low = v.toLowerCase();
-  if (low.startsWith('mailto:')) {
-    const addr = v.slice(7).split(/[?\s]/)[0];
-    const at = addr.lastIndexOf('@');
-    return at > 0 ? { kind: 'email', domain: addr.slice(at + 1).toLowerCase().replace(/\.$/, '') } : { kind: 'malformed', raw: v };
-  }
-  if (low.startsWith('tel:')) return { kind: 'tel' };
-  if (low.startsWith('http://') || low.startsWith('https://')) {
-    try {
-      const u = new URL(v);
-      return { kind: 'url', url: v, domain: u.hostname.toLowerCase(), scheme: u.protocol.replace(':', '') };
-    } catch { return { kind: 'malformed', raw: v }; }
-  }
-  // RFC 9116 requires a URI, but bare addresses are extremely common in the wild.
-  if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)) {
-    return { kind: 'email', bare: true, domain: v.slice(v.lastIndexOf('@') + 1).toLowerCase() };
-  }
-  return { kind: 'malformed', raw: v };
-}
-
-/** RFC 9116 §2.5.5: Expires is mandatory and must be in the future. */
-function expiryState(exp, nowMs) {
-  if (!exp) return 'missing';
-  const t = Date.parse(exp);
-  if (Number.isNaN(t)) return 'unparseable';
-  return t < nowMs ? 'expired' : 'valid';
-}
+/* `emailVerdict`, `urlVerdict`, `parseContact` and `expiryState` were defined here, byte for byte
+ * the same as the library's, and that is exactly how the survey shipped a wrong number. I fixed a
+ * `mailto:`-with-a-space parse bug in stxtlib, re-ran this analyzer against the frozen scan, and
+ * every figure came back identical — because this file never called the function I had fixed. The
+ * copy that produces the published numbers is the copy with no test over it.
+ * They are imported now. `domainFacts` stays local: it is the same DNS logic wrapped in this run's
+ * resume cache, which is a different job. */
 
 /**
  * Wilson score interval for a proportion, now in stats.js so it can be tested on its own. It was
@@ -497,7 +460,10 @@ async function main() {
       if (third) bump('third_party_contact_kinds', p.kind);
     }
     // "Can a report reach these people at all?" — true if ANY listed contact works.
-    const anyEmailWorks = emails.some(c => c.verdict === 'LIVE-MX' || c.verdict === 'IMPLICIT-A');
+    // Same rule the single-domain tool exits on, imported rather than restated: two hand-written
+    // copies of "which verdicts count as working" drift, and the drift lands on whichever of them
+    // has no test over it.
+    const anyEmailWorks = emails.some(c => WORKING_VERDICTS.includes(c.verdict));
     const anyPortalWorks = portals.some(c => c.portal_ok === true);
     const reachable = anyEmailWorks || anyPortalWorks;
 

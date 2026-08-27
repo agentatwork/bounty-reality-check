@@ -1,21 +1,28 @@
 #!/usr/bin/env node
 /**
- * parity_test.js — do the two copies of the RFC 9116 classification logic still agree?
+ * parity_test.js — the analyzer's copies are gone; the scanner's are still under test.
  *
  *   node parity_test.js [dataset.jsonl]
  *
- * `stxtlib.js` says at the top that it exists so there is ONE copy of these rules. That is
- * aspirational: `analyze_securitytxt.js` carries its own `parseContact`, `emailVerdict`,
- * `urlVerdict` and `expiryState`. The duplication has already cost something concrete — the
- * undici body-drain crash had to be fixed twice, in two files, weeks apart — and the cost of it
- * drifting is worse than a crash: the survey would publish one classification while `stxtcheck.js`
- * tells a reader something different about their own domain, and nothing would ever fail.
+ * This file used to diff `analyze_securitytxt.js`'s private `parseContact`, `emailVerdict`,
+ * `urlVerdict` and `expiryState` against the library's. It passed for months. Then a real bug —
+ * `Contact: mailto: addr@example.com`, a space after the scheme, parsed as malformed — was fixed
+ * in the library, the analyzer was re-run, and every published figure came back byte-identical,
+ * because the analyzer was still calling its own copy. Two copies that agree with each other are
+ * not one rule; they are one rule and one place for the fix to not reach. The survey shipped a
+ * wrong number behind that.
  *
- * So until the analyzer imports the library, this asserts the two behave identically. It runs the
- * real corpus through both (every distinct Contact string in the dataset, which is where the ugly
- * inputs live) plus hand-made edge cases, and every DNS fact combination the verdict functions can
- * see. No network: these are pure functions, and a parity test that needs the internet does not
- * get run.
+ * So the analyzer imports all four now, and the first section below is the guard that keeps it
+ * that way: it fails if that file starts defining any of them again. Diffing copies was the wrong
+ * job — this asserts there is nothing to diff.
+ *
+ * `scan_securitytxt.js` still carries its own `parseSecurityTxt` and `looksReal`, and those ARE
+ * still compared here, because deleting them means editing the one component whose output cannot
+ * be regenerated: the scan is frozen, the survey is published against it, and behavioural equality
+ * over hand-made bodies is weaker evidence than not touching it. The duplication stays, under test,
+ * until there is a reason to re-scan.
+ *
+ * No network: these are pure functions, and a parity test that needs the internet does not get run.
  *
  * Diffs print the input with hostnames masked — this file is an artifact too, and a failure
  * message that dumps real contact addresses is a leak that only fires when something is wrong.
@@ -37,7 +44,10 @@
 const fs = require('fs');
 const lib = require('./stxtlib.js');
 
-const WANTED = ['parseContact', 'emailVerdict', 'urlVerdict', 'expiryState'];
+// These four must NOT exist a second time. The analyzer defined all of them privately until the
+// space-after-`mailto:` fix landed in the library and changed nothing, because the analyzer was
+// never calling the library. Now it imports them, and this list is what keeps that true.
+const DEDUPED = ['parseContact', 'emailVerdict', 'urlVerdict', 'expiryState'];
 // The scanner has its own copies too, and these are the ones that matter most: `is_security_txt`
 // comes from the scanner's private `looksReal`, which is the numerator of every adoption figure
 // the survey publishes. If it drifts from the library, the headline count and `stxtcheck.js`
@@ -67,7 +77,35 @@ function loadCopies(file, names) {
   return m.exports;
 }
 
-const mask = (s) => String(s).replace(/[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g, '<host>');
+/**
+ * The dedup guard. Fails if `file` declares its own copy of a library function, or if it stops
+ * importing the library at all — a file that neither imports nor defines these has been
+ * restructured in some way this test no longer understands, and passing silently would be worse
+ * than failing loudly.
+ */
+function assertImportsNotCopies(file, names) {
+  const src = fs.readFileSync(require.resolve(file), 'utf8');
+  const redefined = names.filter(n => new RegExp(`^function ${n}\\(`, 'm').test(src));
+  if (redefined.length) {
+    return [`${file} defines its own ${redefined.join(', ')} again — the analyzer must import `
+      + `these from stxtlib.js. Two copies is how the mailto-space fix silently missed.`];
+  }
+  if (!/require\(['"]\.\/stxtlib(?:\.js)?['"]\)/.test(src)) {
+    return [`${file} does not require stxtlib.js — where is it getting ${names.join(', ')}?`];
+  }
+  const missing = names.filter(n => !new RegExp(`\\b${n}\\b`).test(src));
+  if (missing.length) return [`${file} no longer references ${missing.join(', ')} at all`];
+  return [];
+}
+
+// Scrub anything host- or address-shaped out of failure output. The dotted-name pattern alone is
+// not enough: the first run of the rewritten test failed on a real contact whose domain had a
+// COMMA where the dot should be, so the mask did not recognise it and printed a stranger's report
+// address into the log. The local part goes too — `user@` identifies a person even with the host
+// removed — and any token holding a dot-substitute typo is treated as a host.
+const mask = (s) => String(s)
+  .replace(/[A-Za-z0-9._%+-]+@[^\s>]+/g, '<addr>')
+  .replace(/[A-Za-z0-9-]+(?:[.,;][A-Za-z0-9-]+)+/g, '<host>');
 
 function corpusContacts(datasetPath, cap = 20000) {
   const out = [];
@@ -92,22 +130,43 @@ const EDGE = [
   'mailto:a@b.example?subject=hi', 'not a uri', '//example.com', 'mailto:', '@example.com',
   'https://', 'MailTo:Mixed@Example.Com', ' mailto:pad@example.com ',
 ];
-const DNS_FACTS = [
-  { state: 'EXISTS', hasMx: true, nullMx: false, hasA: true },
-  { state: 'EXISTS', hasMx: true, nullMx: false, hasA: false },
-  { state: 'EXISTS', hasMx: false, nullMx: true, hasA: true },
-  { state: 'EXISTS', hasMx: false, nullMx: false, hasA: true },
-  { state: 'EXISTS', hasMx: false, nullMx: false, hasA: false },
-  { state: 'UNREGISTERED' }, { state: 'DEAD-SUBDOMAIN' }, { state: 'INVALID-TLD' },
+// Every DNS fact combination the verdict functions can see, with the answer each must give. This
+// was a copy-vs-copy diff; with one copy left it has to state what the right answer IS. Each line
+// is a rule from a spec, not a snapshot of current behaviour:
+//   [facts, emailVerdict, urlVerdict]
+const DNS_CASES = [
+  // MX present: mail is deliverable regardless of whether the domain also serves web.
+  [{ state: 'EXISTS', hasMx: true, nullMx: false, hasA: true }, 'LIVE-MX', 'RESOLVES'],
+  [{ state: 'EXISTS', hasMx: true, nullMx: false, hasA: false }, 'LIVE-MX', 'NO-ADDRESS'],
+  // RFC 7505: a null MX is the domain saying, on the record, that it accepts no mail. That is a
+  // broken contact even though every lookup succeeded — which is the whole point of the survey.
+  [{ state: 'EXISTS', hasMx: false, nullMx: true, hasA: true }, 'NULL-MX', 'RESOLVES'],
+  // RFC 5321 §5.1: no MX but an address record means the A/AAAA host IS the mail exchanger.
+  [{ state: 'EXISTS', hasMx: false, nullMx: false, hasA: true }, 'IMPLICIT-A', 'RESOLVES'],
+  [{ state: 'EXISTS', hasMx: false, nullMx: false, hasA: false }, 'NO-MAIL', 'NO-ADDRESS'],
+  // Domain-level states pass through unchanged: what is wrong is the domain, not the service.
+  [{ state: 'UNREGISTERED' }, 'UNREGISTERED', 'UNREGISTERED'],
+  [{ state: 'DEAD-SUBDOMAIN' }, 'DEAD-SUBDOMAIN', 'DEAD-SUBDOMAIN'],
+  [{ state: 'INVALID-TLD' }, 'INVALID-TLD', 'INVALID-TLD'],
 ];
+// Only LIVE-MX and IMPLICIT-A mean a report can actually arrive. Asserted here because the
+// published "no working contact" figure is defined by this set, and three files now consume it.
+const WORKING = ['LIVE-MX', 'IMPLICIT-A'];
+
 const NOW = Date.parse('2026-08-27T12:00:00Z');
 // The last three sit exactly ON the boundary and one millisecond either side of it. Without them
 // the suite passed a mutant that changed `t < now` to `t <= now`: three mutations were injected
 // to check this test can fail at all, and that one escaped. A test nobody has tried to break is
-// an assertion that it has never been broken yet.
-const EXPIRIES = [null, '', '2020-01-01', '2030-01-01T00:00:00Z', 'not-a-date',
-  '2026-08-27T11:00:00Z', '2026-08-27T13:00:00Z', '2024-01-01T06:00:00.000Z',
-  '2026-08-27T12:00:00Z', '2026-08-27T11:59:59.999Z', '2026-08-27T12:00:00.001Z'];
+// an assertion that it has never been broken yet. RFC 9116 §2.5.5 makes an Expires date in the
+// past mean the file "should not be used" — so the boundary instant itself is still valid.
+const EXPIRY_CASES = [
+  [null, 'missing'], ['', 'missing'],
+  ['2020-01-01', 'expired'], ['2030-01-01T00:00:00Z', 'valid'], ['not-a-date', 'unparseable'],
+  ['2026-08-27T11:00:00Z', 'expired'], ['2026-08-27T13:00:00Z', 'valid'],
+  ['2024-01-01T06:00:00.000Z', 'expired'],
+  ['2026-08-27T12:00:00Z', 'valid'],                    // exactly now: not yet past
+  ['2026-08-27T11:59:59.999Z', 'expired'], ['2026-08-27T12:00:00.001Z', 'valid'],
+];
 
 /**
  * Bodies for the scanner comparison. The scan records keep only a byte count, not the body, so
@@ -141,8 +200,7 @@ const BODIES = [
   `${'x'.repeat(500)}\n<!doctype html>\nContact: mailto:a@example.com\n`,
 ];
 
-function main() {
-  const an = loadCopies('./analyze_securitytxt.js', WANTED);
+async function main() {
   const sc = loadCopies('./scan_securitytxt.js', SCANNER_WANTED);
   const contacts = [...corpusContacts(process.argv[2] || '/tmp/stxt.jsonl'), ...EDGE];
   let diff = 0;
@@ -150,34 +208,57 @@ function main() {
   // printed both parsed objects verbatim — which is to say it printed the real report addresses
   // it had just been careful not to print. A leak that only fires on failure is still a leak,
   // and it fires exactly when attention is elsewhere.
-  const report = (what, input, a, b) => {
-    if (diff < 10) console.log(`${what} DIFF  ${mask(input)}\n  stxtlib:  ${mask(a)}\n  analyzer: ${mask(b)}`);
+  const report = (what, input, want, got) => {
+    if (diff < 10) console.log(`${what} DIFF  ${mask(input)}\n  want: ${mask(want)}\n  got:  ${mask(got)}`);
     diff++;
   };
 
-  // The two copies differ ON PURPOSE in exactly two fields, both payload rather than
-  // classification: the analyzer keeps neither `addr` (the local part of a stranger's report
-  // address, which it has no use for) nor `raw` (the original string of a tel: or malformed
-  // contact). Those are asserted rather than ignored — the comparison is over the fields that
-  // drive classification, and a SEPARATE check fails if the key sets ever differ by anything
-  // else. Loosening a test until it passes is how drift gets in; this names the permitted
-  // differences and still catches everything outside them.
-  const CARRIED_NOT_CLASSIFIED = new Set(['addr', 'raw']);
-  const CLASSIFY = ['kind', 'domain', 'scheme', 'bare'];
-  const proj = (o) => JSON.stringify(CLASSIFY.map(k => o[k] ?? null));
+  // The guard that replaced the diff. Reported through the same counter as everything else, so a
+  // reintroduced copy fails the suite rather than printing a warning nobody reads.
+  for (const msg of assertImportsNotCopies('./analyze_securitytxt.js', DEDUPED)) {
+    console.log(`dedup DIFF  ${msg}`); diff++;
+  }
+
+  // Corpus contacts no longer have a second parser to be compared against, so what is checked is
+  // the invariant every consumer relies on: an `email` verdict must carry a domain to resolve, a
+  // `url` must carry a parseable URL, and nothing may throw on a string a stranger wrote. The
+  // parse SHAPES — including the space after `mailto:` that caused all this — are pinned by name
+  // in parsecontact_test.js; this is the sweep over 20k real strings that finds the shape nobody
+  // thought to name.
+  const tlds = await lib.loadTlds();
   for (const c of contacts) {
-    const la = lib.parseContact(c), ab = an.parseContact(c);
-    if (proj(la) !== proj(ab)) report('parseContact', c, mask(proj(la)), mask(proj(ab)));
-    const extra = [...new Set([...Object.keys(la), ...Object.keys(ab)])]
-      .filter(k => (k in la) !== (k in ab) && !CARRIED_NOT_CLASSIFIED.has(k));
-    if (extra.length) report('parseContact key set', c, `keys ${Object.keys(la).join(',')}`, `keys ${Object.keys(ab).join(',')}`);
+    let p;
+    try { p = lib.parseContact(c); } catch (e) { report('parseContact threw', c, e.message, ''); continue; }
+    if (!p || !p.kind) { report('parseContact', c, 'a verdict', JSON.stringify(p)); continue; }
+    if (p.kind === 'email') {
+      const d = p.domain || '';
+      if (!d || /[\s@]/.test(d)) report('email domain unusable as a DNS name', c, 'a hostname', d);
+      // Real corpus entries put a comma where the dot belongs, so `parseContact` hands back
+      // things like `example,com` — it takes whatever follows the last `@` and does not judge it.
+      // That is fine, and it must stay fine for one reason only: the TLD gate in domainFacts
+      // catches it before any lookup, so a typo'd address is INVALID-TLD and can never be counted
+      // as a working contact. If a mangled domain could ever pass that gate, the published
+      // reachability figures would include addresses that bounce.
+      else if (!/^[^\s@]+\.[^\s@.]+$/.test(d) && tlds.has(d.split('.').pop())) {
+        report('mangled domain would pass the TLD gate', c, 'INVALID-TLD by construction', d);
+      }
+    }
+    if (p.kind === 'url') {
+      try { new URL(p.url); } catch { report('url without a parseable URL', c, 'a URL', String(p.url)); }
+    }
   }
-  for (const s of DNS_FACTS) {
-    if (lib.emailVerdict(s) !== an.emailVerdict(s)) report('emailVerdict', JSON.stringify(s), lib.emailVerdict(s), an.emailVerdict(s));
-    if (lib.urlVerdict(s) !== an.urlVerdict(s)) report('urlVerdict', JSON.stringify(s), lib.urlVerdict(s), an.urlVerdict(s));
+  for (const [facts, wantEmail, wantUrl] of DNS_CASES) {
+    const ge = lib.emailVerdict(facts), gu = lib.urlVerdict(facts);
+    if (ge !== wantEmail) report('emailVerdict', JSON.stringify(facts), wantEmail, ge);
+    if (gu !== wantUrl) report('urlVerdict', JSON.stringify(facts), wantUrl, gu);
   }
-  for (const e of EXPIRIES) {
-    if (lib.expiryState(e, NOW) !== an.expiryState(e, NOW)) report('expiryState', e, lib.expiryState(e, NOW), an.expiryState(e, NOW));
+  if (JSON.stringify([...lib.WORKING_VERDICTS].sort()) !== JSON.stringify([...WORKING].sort())) {
+    report('WORKING_VERDICTS', 'the set that defines "reachable"',
+      WORKING.join(','), [...lib.WORKING_VERDICTS].join(','));
+  }
+  for (const [e, want] of EXPIRY_CASES) {
+    const got = lib.expiryState(e, NOW);
+    if (got !== want) report('expiryState', String(e), want, got);
   }
 
   // The scanner's copies. `encryption` is a permitted omission — the scanner does not collect
@@ -231,8 +312,9 @@ function main() {
     if (got !== want) report('canonicalState', `${JSON.stringify(canon)} vs ${fetched}`, want, got);
   }
 
-  console.log(`checked ${contacts.length} contact strings, ${DNS_FACTS.length} DNS states, ${EXPIRIES.length} expiry values, ${BODIES.length} file bodies, ${CANON_CASES.length} canonical states`);
-  console.log(diff ? `DIVERGED — ${diff} disagreement(s)` : 'AGREE — the two copies are behaviourally identical');
+  console.log(`checked ${DEDUPED.length} deduped functions, ${contacts.length} contact strings, ${DNS_CASES.length} DNS states, ${EXPIRY_CASES.length} expiry values, ${BODIES.length} file bodies, ${CANON_CASES.length} canonical states`);
+  console.log(diff ? `FAIL — ${diff} problem(s)`
+    : 'OK — one copy of the contact rules, and the scanner still agrees with it');
   process.exit(diff ? 1 : 0);
 }
 

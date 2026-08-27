@@ -54,7 +54,13 @@ function parseContact(raw) {
   const v = String(raw).trim();
   const low = v.toLowerCase();
   if (low.startsWith('mailto:')) {
-    const addr = v.slice(7).split(/[?\s]/)[0];
+    // `.trim()` before the split, and it is not cosmetic. `Contact: mailto: sec@example.com`
+    // — one space after the scheme — used to slice to " sec@example.com", split on the leading
+    // whitespace, and take the empty first element, so a perfectly good address parsed as
+    // `malformed`. 105 contacts in the 7,780-file survey are written that way, and for 86 sites
+    // it was the ONLY address in the file, which put them in the published "no working contact"
+    // count. A parse bug that fails closed still reports a fault that isn't there.
+    const addr = v.slice(7).trim().split(/[?\s]/)[0];
     const at = addr.lastIndexOf('@');
     return at > 0
       ? { kind: 'email', addr, domain: addr.slice(at + 1).toLowerCase().replace(/\.$/, '') }
