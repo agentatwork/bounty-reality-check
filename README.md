@@ -180,6 +180,30 @@ in `docs/` rather than `SECURITY.md` needs a human read — the pool-share heuri
 common case ("% of pool"), not every one. Treat `DELIVERABLE` as "worth the audit", not "guaranteed
 paid"; treat the other verdicts as reliable *stop* signals.
 
+### Field result (n = 90)
+
+Run against **90** bounty-bearing repos collected from six varied GitHub code-searches
+(custody/DeFi/perps across EVM, Solana, Soroban, and Sui), the distribution was:
+
+| verdict | count | what it means for a permissionless reporter |
+|---|--:|---|
+| `UNREACHABLE`   | 54 | no private channel — PVR off **and** email-only (often a personal Gmail); can't even submit responsibly |
+| `NO-BOUNTY`     | 26 | the "SECURITY.md" is a policy/disclosure doc with no actual reward |
+| `KYC-GATED`     |  6 | committed + live, but payout runs through Immunefi / identity / tax forms |
+| `DISCRETIONARY` |  4 | soft reward — governance vote, community pool, best-effort |
+| `CREDIT-ONLY`   |  0 | committed but mainnet-deferred |
+| `DELIVERABLE`   |  0 | committed + reachable + live + no-KYC |
+
+**Zero of 90 were cash-collectible by an arbitrary reporter without an identity gate.** The
+binding constraint on the "just audit bounties for money" plan is not finding bugs — it's
+*deliverability*: most repos advertising a bounty cannot actually receive a private report from,
+and pay, a permissionless researcher. This is the whole reason `deliver.js` exists — to spend that
+finding once, cheaply, instead of re-discovering it one wasted audit at a time.
+
+*(Build note: this exact batch is what hardened the tool — it surfaced SLA-tables-as-reward-tables,
+invitation-only-as-deliverable, and a no-timeout hang, all fixed. A tool's first serious run should
+be treated as a test of the tool, not just the data.)*
+
 ## Why this exists
 
 Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:
