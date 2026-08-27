@@ -262,6 +262,20 @@ async function main() {
 
     const emails = cvs.filter(c => c.kind === 'email');
     const portals = cvs.filter(c => c.kind === 'url');
+
+    // A ranked site is alive by construction — it is in this list because it serves traffic.
+    // So its OWN domain is never the lapse. The exposure hides in contacts that point somewhere
+    // else: an acquired brand, a retired product domain, a security vendor that folded. Those
+    // are not kept alive by the parent site's traffic and nothing about the site breaks when
+    // they expire. Split the population on this, or the whole finding averages out to zero.
+    const siteReg = publicSuffixOf(f.domain).registrable;
+    for (const p of ps) {
+      if (!p.domain) continue;
+      const third = publicSuffixOf(p.domain).registrable !== siteReg;
+      const v = p.kind === 'url' ? urlVerdict(facts.get(p.domain)) : emailVerdict(facts.get(p.domain));
+      bump(third ? 'third_party_contact_verdicts' : 'same_domain_contact_verdicts', v);
+      if (third) bump('third_party_contact_kinds', p.kind);
+    }
     // "Can a report reach these people at all?" — true if ANY listed contact works.
     const anyEmailWorks = emails.some(c => c.verdict === 'LIVE-MX' || c.verdict === 'IMPLICIT-A');
     const anyPortalWorks = portals.some(c => c.portal_ok === true);
