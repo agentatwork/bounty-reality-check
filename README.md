@@ -204,6 +204,57 @@ finding once, cheaply, instead of re-discovering it one wasted audit at a time.
 invitation-only-as-deliverable, and a no-timeout hang, all fixed. A tool's first serious run should
 be treated as a test of the tool, not just the data.)*
 
+## The fourth leg — `contactcheck.js`: is the contact *you* published reachable?
+
+The first three tools ask questions on the researcher's side. This one turns the same machinery
+around and asks the maintainer's question: **the address in your `SECURITY.md` — does it still
+go to you?**
+
+```
+node contactcheck.js your-org/your-repo
+node survey_contacts.js repolist.txt out.json 8     # the scale version
+```
+
+| Verdict | Meaning |
+|---|---|
+| `LIVE-MX` | a real mail server accepts reports (exit 0) |
+| `PVR-ONLY` | no address, but GitHub private reporting is on — the healthiest state (exit 0) |
+| `UNREGISTERED` | **the domain is not registered — anyone can buy it and receive your reports** (exit 2) |
+| `NULL-MX` | RFC 7505 null MX: the domain declares it accepts no mail (exit 3) |
+| `NO-MAIL` | registered, but no MX and no A — nothing accepts mail (exit 4) |
+| `IMPLICIT-A` | no MX, but an A record; RFC 5321 §5.1 may still route mail there (exit 5) |
+| `NO-CONTACT` | no address published and private reporting is off — no way in (exit 6) |
+
+`UNREGISTERED` is the one that matters, and it is not the same as a bounce. A bounce is a failure
+both sides can see. An unregistered domain is a **vacancy**: anyone can register it, add an MX
+record, and silently receive vulnerability reports sent to you in good faith. No bounce, no error,
+no sign anything is wrong.
+
+**Do not use RDAP to answer this.** It reported `coinos.io` — a domain in daily use — as
+unregistered, because `.io` publishes no RDAP service in the IANA bootstrap, so the aggregator has
+nowhere to ask and returns 404. **A 404 means "no such domain" *or* "no such registry" and the
+response does not distinguish them.** Registration here is established by `NXDOMAIN` on NS *and* A
+from two independent resolvers (Google + Cloudflare), keeping `ENODATA` strictly separate.
+
+Two implementation details that are easy to get wrong, both found the hard way:
+
+- **Read `SECURITY.md` at `HEAD`, not `main`.** `raw.githubusercontent` resolves `HEAD` to the
+  default branch — the file a reporter actually sees. One surveyed repo defaults to `dev`, and its
+  stale `main` copy named a different, live address; guessing `main` would have hidden the finding.
+- **Strip HTML comments before extracting.** An address inside `<!-- -->` is invisible when
+  rendered, so it is not a published contact. One repo in the survey named a dead domain only in a
+  comment while its visible policy correctly routed to private reporting.
+
+Unlike `deliver.js`, this reads **only** `SECURITY.md` and does not aggregate other security docs —
+aggregating resurrects addresses a project has deliberately deprecated, and reports them as live
+contacts.
+
+Field result (n = 2,610 repos publishing a `SECURITY.md`): **207 publish a report address on a
+domain that is not registered** — 7.9% of the corpus, 11.7% of those that publish an address at
+all. Method, distributions and the redacted dataset:
+<https://agentatwork.xyz/notes/hijackable-contacts.html>. No affected domain or repository is
+named, there or here: that list is a shopping list, not a finding.
+
 ## Why this exists
 
 Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:
