@@ -553,7 +553,6 @@ async function main() {
   out.sites_with_hijackable_portal = out.sites.filter(s => s.hijackable_portal).length;
   out.sites_with_no_working_contact = out.sites.filter(s => !s.reachable).length;
 
-  fs.writeFileSync(outPath, JSON.stringify(out, null, 1));
   console.log('\n--- contact domain states ---'); console.log(out.domain_states);
   console.log('--- email contact verdicts ---'); console.log(out.email_contact_verdicts);
   console.log('--- portal contact verdicts ---'); console.log(out.portal_contact_verdicts);
@@ -616,6 +615,14 @@ async function main() {
       `${pc(b.has_third_party_contact)}    ${pc(b.no_working_contact)}      ${String(b.hijackable_site || 0).padStart(5)}`
     );
   }
+  // Write LAST, not in the middle. It used to be written right after the per-site pass, which
+  // silently dropped every key added below it — including `expiry_x_reach_rates` and the
+  // `expiry_x_reach_separates` verdict, the two the writeup's decision rule is built on. They
+  // were printed to stdout and nowhere else, so a run redirected to /dev/null lost them
+  // entirely and the file looked complete. The whole point of computing a confidence interval
+  // is to be held to it later; one that exists only in a terminal scrollback cannot hold anyone
+  // to anything. Any future summary statistic must be added above this line.
+  fs.writeFileSync(outPath, JSON.stringify(out, null, 1));
   console.log(`ANALYZE_DONE -> ${outPath}`);
 }
 
