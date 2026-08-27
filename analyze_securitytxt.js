@@ -345,6 +345,14 @@ async function main() {
 
     // Same counts, split by popularity. Rates per bucket are computed at the end from
     // adoption_by_bucket's denominators — never eyeball a count across buckets of unequal size.
+    // Does a stale file predict a dead contact? This is the one correlation in the data that
+    // nobody has published, and it is the difference between "Expires is a compliance checkbox"
+    // and "Expires is a usable proxy for whether anyone is still minding the channel". Counted
+    // both ways so the base rates are visible -- a raw count of "expired AND unreachable" means
+    // nothing without knowing how many files are expired at all.
+    bump('expiry_x_reach', `${exp}__${reachable ? 'reachable' : 'unreachable'}`);
+    if (hijE || hijP) bump('expiry_x_hijackable', exp);
+
     bumpB(f._bucket, `expiry_${exp}`);
     bumpB(f._bucket, reachable ? 'reachable' : 'no_working_contact');
     if (hijE || hijP) bumpB(f._bucket, 'hijackable_site');
@@ -386,6 +394,18 @@ async function main() {
   console.log(`\nsites with a hijackable EMAIL contact:  ${out.sites_with_hijackable_email}`);
   console.log(`sites with a hijackable PORTAL contact: ${out.sites_with_hijackable_portal}`);
   console.log(`sites with NO working contact at all:   ${out.sites_with_no_working_contact} / ${files.length}`);
+
+  // Is Expires a proxy for maintenance, or just a compliance checkbox? Rate of unreachable
+  // contacts WITHIN each expiry state -- if the rates match, a stale date tells you nothing
+  // about whether the channel works, which is worth saying since the whole literature leans
+  // on Expires as the health metric.
+  console.log('\n--- expiry vs contact reachability ---');
+  for (const st of ['valid', 'expired', 'missing', 'unparseable']) {
+    const r = (out.expiry_x_reach || {})[`${st}__reachable`] || 0;
+    const u = (out.expiry_x_reach || {})[`${st}__unreachable`] || 0;
+    if (r + u === 0) continue;
+    console.log(`  ${st.padEnd(12)} n=${String(r + u).padStart(6)}  unreachable ${(100 * u / (r + u)).toFixed(2).padStart(6)}%  hijackable=${(out.expiry_x_hijackable || {})[st] || 0}`);
+  }
 
   // The rank table is the point of the whole 200k run: is a lapsed contact a tail phenomenon,
   // or does it happen at every level of the list? Rates, not counts — the buckets differ in
