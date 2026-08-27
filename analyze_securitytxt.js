@@ -199,6 +199,27 @@ function expiryState(exp, nowMs) {
   return t < nowMs ? 'expired' : 'valid';
 }
 
+/**
+ * Wilson score interval for a proportion.
+ *
+ * Used because the expiry-vs-reachability cross-tab is the writeup's one novel correlation, and
+ * on a test slice it already looked like a finding off three events against zero. Wilson rather
+ * than the normal approximation precisely because these cells are small and the rates are near
+ * zero, where the textbook interval produces nonsense (and can dip below 0).
+ *
+ * Comparing whole intervals for overlap is a conservative test — stricter than a two-sample
+ * test, so it will occasionally call a real difference unsupportable. That is the error worth
+ * making here.
+ */
+function wilson(k, n, z = 1.96) {
+  if (!n) return [0, 0];
+  const p = k / n, z2 = z * z;
+  const denom = 1 + z2 / n;
+  const centre = (p + z2 / (2 * n)) / denom;
+  const half = (z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))) / denom;
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
 async function main() {
   const NOW = Date.parse(process.env.SURVEY_NOW || '2026-08-27T00:00:00Z');
   const ranks = loadRanks();
@@ -555,11 +576,27 @@ async function main() {
   // about whether the channel works, which is worth saying since the whole literature leans
   // on Expires as the health metric.
   console.log('\n--- expiry vs contact reachability ---');
+  out.expiry_x_reach_rates = {};
   for (const st of ['valid', 'expired', 'missing', 'unparseable']) {
     const r = (out.expiry_x_reach || {})[`${st}__reachable`] || 0;
     const u = (out.expiry_x_reach || {})[`${st}__unreachable`] || 0;
     if (r + u === 0) continue;
-    console.log(`  ${st.padEnd(12)} n=${String(r + u).padStart(6)}  unreachable ${(100 * u / (r + u)).toFixed(2).padStart(6)}%  hijackable=${(out.expiry_x_hijackable || {})[st] || 0}`);
+    const [lo, hi] = wilson(u, r + u);
+    out.expiry_x_reach_rates[st] = {
+      n: r + u, unreachable: u, pct: +(100 * u / (r + u)).toFixed(2),
+      ci95_lo: +(100 * lo).toFixed(2), ci95_hi: +(100 * hi).toFixed(2),
+    };
+    console.log(`  ${st.padEnd(12)} n=${String(r + u).padStart(6)}  unreachable ${(100 * u / (r + u)).toFixed(2).padStart(6)}%  [95% CI ${(100 * lo).toFixed(2)}–${(100 * hi).toFixed(2)}]  hijackable=${(out.expiry_x_hijackable || {})[st] || 0}`);
+  }
+  // Say out loud whether the comparison supports a claim, because the raw percentages will look
+  // like a finding whether or not they are one, and this is the cross-tab the writeup leans on.
+  {
+    const rs = Object.entries(out.expiry_x_reach_rates);
+    const sep = rs.filter(([, a]) => rs.some(([, b]) => a.ci95_lo > b.ci95_hi));
+    out.expiry_x_reach_separates = sep.length > 0;
+    console.log(sep.length
+      ? '  -> at least one expiry state has a non-overlapping CI: a real difference'
+      : '  -> all 95% CIs overlap: NO supportable difference between expiry states');
   }
 
   // The rank table is the point of the whole 200k run: is a lapsed contact a tail phenomenon,
