@@ -116,8 +116,11 @@ const EXTERNAL = new Map([
   ['2024-01-01', "twitter/x.com's published Expires value, verifiable by anyone"],
   ['06', 'hour in that same timestamp'], ['00', 'minutes/seconds in that same timestamp'],
   ['000', 'milliseconds in that same timestamp'],
-  // HTTP status codes, named as part of the argument about what each one means.
-  ['200', 'HTTP status'], ['403', 'HTTP status'], ['404', 'HTTP status'], ['410', 'HTTP status'],
+  // HTTP status codes, named as part of the argument about what each one means. 401/403/429 are
+  // the three the analyzer folds into `alive_gated` — a server that is up and refusing this
+  // scanner — as against 404/410, the two that mean the report page is genuinely gone.
+  ['200', 'HTTP status'], ['401', 'HTTP status'], ['403', 'HTTP status'], ['404', 'HTTP status'],
+  ['410', 'HTTP status'], ['429', 'HTTP status'],
   // Rank-bucket boundaries. These are the shape of the analysis, not results from it: they are
   // chosen before the scan and would be the same numbers if every fetch had failed.
   ['1000', 'rank bucket boundary'], ['100000', 'rank bucket boundary'],
