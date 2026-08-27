@@ -108,12 +108,24 @@ function main() {
   const lines = text.split('\n');
   const nums = analysisNumbers(JSON.parse(fs.readFileSync(analysisPath, 'utf8')));
 
+  // Matched over the WHOLE text, not line by line. Line-at-a-time missed every placeholder that
+  // spans more than one line — which is all the big ones, the paragraphs of editorial instruction
+  // I most need removing. It found the tidy ⟨N⟩ tokens and was blind to ⟨a four-line note telling
+  // me what to write here⟩, so the check was weakest exactly where the mistake is most visible.
+  // Caught by accident: reflowing one placeholder onto three lines dropped the count by one.
   let unfilled = 0, unsourced = 0;
-  for (let i = 0; i < lines.length; i++) {
-    for (const m of lines[i].matchAll(/⟨[^⟩]*⟩/g)) {
-      console.log(`UNFILLED  ${draftPath}:${i + 1}  ${m[0].slice(0, 60)}${m[0].length > 60 ? '…' : ''}`);
-      unfilled++;
-    }
+  for (const m of text.matchAll(/⟨[^⟩]*⟩/gs)) {
+    const line = text.slice(0, m.index).split('\n').length;
+    const flat = m[0].replace(/\s+/g, ' ');
+    console.log(`UNFILLED  ${draftPath}:${line}  ${flat.slice(0, 70)}${flat.length > 70 ? '…' : ''}`);
+    unfilled++;
+  }
+  // An opening bracket with no partner would otherwise be invisible to the rule above, and it is
+  // the more dangerous shape: half a placeholder reads as ordinary prose.
+  const opens = (text.match(/⟨/g) || []).length, closes = (text.match(/⟩/g) || []).length;
+  if (opens !== closes) {
+    console.log(`UNBALANCED ${draftPath}  ${opens} opening vs ${closes} closing bracket(s)`);
+    unfilled++;
   }
 
   // Link targets and command examples are skipped: a URL's digits and a shell snippet's numbers
