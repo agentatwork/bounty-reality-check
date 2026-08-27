@@ -446,6 +446,27 @@ takes it from dataset-sized work per file to file-sized work. At 200k domains th
 billions of character comparisons per artifact, and a check too slow to run is a check that gets
 skipped right before the one publication that needed it.
 
+### `draftcheck.js` — a number in the prose that is in no analysis
+
+```sh
+node draftcheck.js draft.md analysis.json   # exit 1 if unfilled or unsourced
+```
+
+Every numeric literal in the writeup must either appear in the analysis JSON or be listed in the
+script as external, with its source named — a citation's figure, an HTTP status code, a rank
+boundary chosen before the scan. Anything in neither place was invented, however honestly.
+
+It exists because of a specific published error: I once wrote "9 of 11 improved to 11 of 11" by
+taking the count from one decision rule and the worst case from another. Both numbers were real,
+neither was wrong alone, and together they described a run that never happened. That flattered
+me, which is exactly why several rereads did not catch it. The other half of the job is cruder —
+a draft is written before the run finishes, and a `⟨PLACEHOLDER⟩` left in is embarrassing while a
+placeholder quietly replaced by a number remembered from a pilot is worse.
+
+What it cannot check is whether a sourced number is in the *right* sentence. It reduces the
+failure to "a real number in the wrong place", which a careful reread can catch, from "any number
+at all", which it cannot.
+
 ### The tests, and the mutants that survived them
 
 ```sh
