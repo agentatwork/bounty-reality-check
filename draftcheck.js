@@ -110,7 +110,29 @@ const EXTERNAL = new Map([
   ['3.2', 'security.txt Revisited Table 2: top 100k'],
   ['1.0', 'security.txt Revisited Table 2: top 1M'],
   ['3609234', 'DOI of security.txt Revisited'],
-  ['1145', 'DOI prefix'],
+  ['1145', 'DOI prefix'], ['10.1145', 'DOI prefix as written in the citation'],
+  ['2022', 'year, the population security.txt Revisited scanned'],
+  // Sections of RFC 9116 the signed-file article argues from, each opened in rfc9116.txt before
+  // being added here. §2.3 is the one that RECOMMENDs a signature and, in the same breath,
+  // RECOMMENDs Canonical "thus allowing the digital signature to authenticate the location of the
+  // file"; §5.1 is the instruction to researchers to verify it; §2.5.6 is the warning that the
+  // Encryption key must not be assumed to be the signing key. The article's thesis is that those
+  // three sentences leave no specified way to obtain the verification key, so a mistyped section
+  // number here would be a mistyped load-bearing citation.
+  ['2.3', 'RFC 9116 §2.3, Encryption/signature recommendation'],
+  ['5.1', 'RFC 9116 §5.1, advice to security researchers'],
+  ['2.5.6', 'RFC 9116 §2.5.6, Encryption field'],
+  // §4 is the ABNF. It shares a key with the exit-code entry below — the Map keeps the last
+  // value, and both are whitelist entries, so the effect is the same; the note is here so the
+  // citation is not silently unaccounted for.
+  ['4880', 'RFC 4880, OpenPGP message format'],
+  ['7.1', 'RFC 4880 §7.1, dash-escaped cleartext'],
+  // Rank-band edges as the signed article writes them: inclusive starts, one past the boundary
+  // above. Same buckets, different rendering.
+  ['1001', 'rank bucket boundary'], ['10000', 'rank bucket boundary'],
+  ['10001', 'rank bucket boundary'], ['100001', 'rank bucket boundary'],
+  ['509', 'X.509, the certificate standard named when saying what a key URL served instead'],
+  ['90', '90th percentile, the statistic named'],
   ['2023', 'year, Digital Threats'], ['2024', 'year'], ['2025', 'year'],
   ['2026', 'year'], ['2017', 'year, USENIX Security'], ['27', 'date of writing'],
   ['2024-01-01', "twitter/x.com's published Expires value, verifiable by anyone"],
@@ -128,9 +150,9 @@ const EXTERNAL = new Map([
   // `100k-200k` — where the digits are part of a bucket name rather than a measurement.
   ['50', 'rank bucket boundary, thousands'], ['100', 'rank bucket boundary, thousands'],
   ['95', 'confidence level of the Wilson interval'],
-  // Exit codes of the tool the article ships.
-  ['0', 'stxtcheck exit code'], ['1', 'stxtcheck exit code'], ['2', 'stxtcheck exit code'],
-  ['4', 'stxtcheck exit code'],
+  // Exit codes of the tools the articles ship: stxtcheck 0-4, sigcheck 0-5.
+  ['0', 'stxtcheck/sigcheck exit code'], ['1', 'stxtcheck/sigcheck exit code'],
+  ['2', 'stxtcheck/sigcheck exit code'], ['4', 'stxtcheck/sigcheck exit code (also RFC 9116 §4)'],
   // Counts stated about my own method rather than measured by the analyzer.
   ['62', 'sample-stage bug: sites misreported by the MX-for-portals defect'],
   ['3000', 'size of the pilot sample'], ['3', 'pilot sample, thousand'],

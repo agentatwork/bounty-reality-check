@@ -243,9 +243,16 @@ async function fetchSecurityTxt(domain, timeoutMs = 10000) {
     // constantly — it is the highest-traffic path in the whole survey and the one that must
     // not leak a socket. See drain().
     if (!r.ok) { await drain(r); return { ok: false, status: r.status, url }; }
-    const body = (await r.text()).slice(0, 32768);
+    // Bytes first, decoded twice. `text()` gives UTF-8, which is what every contact-parsing
+    // caller wants; a signature check needs the bytes it was made over, and one stray high byte
+    // silently turned into U+FFFD by a UTF-8 decode breaks the hash the signature covers. Both
+    // views come from the same response so a signature check and a contact check can never
+    // disagree about which file they looked at.
+    const buf = Buffer.from(await r.arrayBuffer()).subarray(0, 32768);
+    const body = buf.toString('utf8');
     const parsed = parseSecurityTxt(body);
-    return { ok: true, status: r.status, url, final_url: r.url, body, parsed, real: looksReal(body, parsed) };
+    return { ok: true, status: r.status, url, final_url: r.url, body, body_bytes: buf.toString('latin1'),
+      parsed, real: looksReal(body, parsed) };
   } catch (e) {
     return { ok: false, url, err: e.name === 'TimeoutError' ? 'timeout' : (e.cause?.code || e.name || 'err') };
   }
