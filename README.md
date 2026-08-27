@@ -299,6 +299,38 @@ hosts return HTTP 200 with an HTML page for *any* path, so counting status codes
 substantially over-reports adoption. A file counts only if it parses and carries the mandatory
 `Contact` field.
 
+### The apex is not the whole site — `mkwwwlist.js`
+
+The scan fetches `https://<domain>/.well-known/security.txt`. When the apex carries no A/AAAA
+record that fails with `ENOTFOUND`, and it is tempting to file the domain under "unreachable" and
+move on. **A quarter of them are serving a live `www.` host.** In an evenly-spaced sample of 120
+`ENOTFOUND` domains, `www.` resolved for 31 — about 3,100 domains at the two-thirds mark of the
+run, against 4,694 files found. RFC 9116 §3 puts the file at the top level of the domain the
+service runs on, so for a site that only answers on `www.` that is the conforming location, and
+the apex pass never looked at it.
+
+The reason to go back for them is bias, not sample size. "Registered and delegated, but no
+address at the apex" is not a random slice of the web — it selects for older DNS setups and for
+organisations that never revisited their zone, which is precisely the population a survey about
+*stale contact information* is least entitled to drop. Omitting them would make the finding
+cleaner in the direction the finding already points.
+
+`ENOTFOUND` is the only trigger. A timeout, a refused connection or a bad certificate all mean
+something exists at the apex address, so `www.` would not be a second location — it would be a
+second guess at the same site.
+
+The second pass needs no new scanner, only a new list, which is the whole point: the existing one
+is already drained, resumable and supervised, and a bespoke retry script would re-introduce every
+bug that machinery already fixed. `mkwwwlist.js` reads the scan's own output and emits the
+`www.` hosts; the scanner then runs over that list into a **separate** output file, which is what
+allows apex adoption and www-only adoption to be reported as two numbers rather than quietly
+merged into one.
+
+```sh
+node mkwwwlist.js out.jsonl www_retry.txt
+./supervise_scan.sh www_retry.txt out_www.jsonl www.log 32
+```
+
 ### Running it at scale, on a machine that cannot hold it
 
 `supervise_scan.sh` exists because the scan structurally cannot finish in one process. Node's
