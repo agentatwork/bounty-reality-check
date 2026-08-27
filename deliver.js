@@ -150,10 +150,23 @@ function classify(doc) {
   const discretionary = { hit: strongDiscretionary.hit || weakDiscretionary.hit,
     evidence: [...strongDiscretionary.evidence, ...weakDiscretionary.evidence].slice(0, 3) };
 
+  // Committed must be MONEY-anchored. A bare "| Critical | ... |" table row is not
+  // enough — response-SLA tables ("| Critical | 24 hours | 72 hours |") share that
+  // shape (the aethelred false-positive). Require a currency symbol / token / 4+-digit
+  // amount so an SLA table can't pass as a reward table.
   const committed = scan(t, [
     /paid in (usdc|usdt|dai|xlm|eth|usd)/, /will be paid/, /bounty (is|of) \$?\d/,
     /\$\s?\d[\d,]*\s*(to|-|–)\s*\$?\d/, /up to \$\s?\d[\d,]{2,}/,
-    /reward table/, /\|\s*critical\s*\|/, /per (bug|finding|vulnerability)/,
+    /\|\s*critical\s*\|[^\n|]*(\$|usdc|usdt|dai|\d{4,})/i, // reward-table row WITH an amount
+    /(reward|payout).{0,20}\$\s?\d[\d,]{2,}/, /per (bug|finding|vulnerability).{0,20}\$?\d/,
+  ]);
+
+  // Program-access gate: an invitation-only / not-yet-open program does not reward an
+  // uninvited reporter, even when PVR is technically on (the aethelred lesson).
+  const invitationOnly = scan(t, [
+    /invitation[- ]only/, /private,? (and )?(invitation|invite)/, /by invitation( only)?/,
+    /not yet open/, /not open to the public/, /closed (beta|program)/,
+    /application (is )?required/, /must be invited/, /invite[- ]only/,
   ]);
 
   // Deferral must be about REWARD TIMING, not generic "test on testnet before
@@ -179,13 +192,20 @@ function classify(doc) {
   const hardWalledMail = emailChannel.some(e => /@(gmail|googlemail)\.com$/.test(e));
   const pvrLinkInDoc = /security\/advisories\/new/i.test(t) || /private vulnerability reporting/i.test(t);
 
-  return { discretionary, strongDiscretionary, weakDiscretionary, committed, deferred, kyc, emailChannel: [...new Set(emailChannel)].slice(0, 3), hardWalledMail, pvrLinkInDoc };
+  return { discretionary, strongDiscretionary, weakDiscretionary, committed, invitationOnly, deferred, kyc, emailChannel: [...new Set(emailChannel)].slice(0, 3), hardWalledMail, pvrLinkInDoc };
 }
 
 function verdict({ pvr, doc, c }) {
   if (!doc) return { code: 'NO-BOUNTY', exit: 7, why: 'no SECURITY.md / bug-bounty doc found' };
 
   const reasons = [];
+
+  // Access gate first: an invitation-only / not-yet-open program won't pay an
+  // uninvited reporter no matter how good the PVR channel or reward table looks.
+  if (c.invitationOnly.hit) {
+    return { code: 'UNREACHABLE', exit: 6, why: `invitation-only / not-open program: ${c.invitationOnly.evidence[0] || 'private by invitation'}` };
+  }
+
   const privateChannel = pvr === true || c.pvrLinkInDoc;
   const emailOnly = !privateChannel && c.emailChannel.length > 0;
 
