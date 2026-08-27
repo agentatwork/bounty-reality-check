@@ -6,7 +6,8 @@
  *
  * WHY THIS EXISTS. The apex scan fetches `https://<domain>/.well-known/security.txt`. When the
  * apex has no A/AAAA record that fetch fails with ENOTFOUND and the domain is recorded as
- * unreachable — but a quarter of those domains serve a perfectly live `www.` host. RFC 9116 §3
+ * unreachable — but 28.0% of those domains (95% CI 23.2–33.3%, n=300 sampled from the list and
+ * resolved independently) serve a `www.` host with an address. RFC 9116 §3
  * places the file at the top level of the domain the service runs on, so for a site that only
  * answers on `www.` that IS the conforming location, and the apex scan never looked at it.
  *
@@ -20,6 +21,30 @@
  * all mean something answered (or failed) at the apex address, so the apex exists and `www.` is
  * not a second location to try — it is a different guess at the same site. Only "this name has no
  * address" leaves the `www.` host genuinely unexamined.
+ *
+ * HOW CONTAMINATED IS THE LIST, MEASURED. ENOTFOUND at scan time could also be a transient
+ * resolver failure, which would put a domain with a perfectly good apex on the retry list and
+ * inflate the "no address at the apex" denominator the writeup quotes a percentage of. A 300-domain
+ * random sample of the list, re-resolved independently afterwards: 3 apexes resolve now — 1.0%,
+ * 95% CI 0.3–2.9% — and 297 genuinely have no address. So the list is ~99% real and the overstate
+ * is smaller than the rounding on the figure it feeds.
+ *
+ * The breakdown of those 297 is the more interesting half, because it confirms the bias argument
+ * above rather than merely assuming it: 291 are ENODATA and only 5 are true ENOTFOUND. ENODATA
+ * means the name exists and is delegated — real NS records, a real zone — and simply carries no
+ * address at the apex. These are not dead domains being swept up. They are live zones configured
+ * the way zones were configured before the apex became the canonical host, which is exactly the
+ * population the paragraph above claims is at stake.
+ *
+ * Sampled rather than measured over the whole list because verifying all ~26k costs an hour of
+ * DNS for a number whose interval is already tight enough to not change any published digit.
+ *
+ * A PRE-REGISTERED BOUND ON THE SECOND PASS. The 28.0% above is DNS resolution only, and the
+ * second pass needs strictly more than that — TLS has to complete and HTTP has to answer. So the
+ * share of retried domains whose `www.` host responds must land at or below 28.0%, and cannot
+ * credibly exceed the interval's 33.3%. Writing that down BEFORE the pass runs is the point: a
+ * second-pass number that comes back higher is not a better result, it is a bug in how a response
+ * is counted, and deciding that afterwards is how a bug that inflates a finding gets kept.
  *
  * Output is a plain one-per-line list for scan_securitytxt.js, which needs no changes: it will
  * record `"domain":"www.example.com"`, and keeping those in a SEPARATE output file is what lets
