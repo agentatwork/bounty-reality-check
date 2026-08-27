@@ -40,6 +40,14 @@ const ALLOW = new Set([
   // (an expired Expires field, a Canonical mismatch). These are working, registered, famous
   // domains; the finding is that a field is stale, which is visible to anyone who looks.
   'google.com', 'cloudflare.com', 'x.com', 'twitter.com', 'youtube.com', 'amazon.com', 'gandi.net',
+  // Public RPC and explorer endpoints the OTHER tools in this repo connect to. These predate the
+  // survey by months and were picked from chain documentation, not from any scan result. They
+  // collide only because a big enough domain list eventually contains everything -- which is the
+  // failure mode to expect as the dataset grows, and the reason the allowlist is hand-held:
+  // "appears in the dataset" and "was chosen because of the dataset" are different claims and
+  // only the second is a leak.
+  'polygon-rpc.com', 'sourcify.dev', 'evm.cronos.org', 'forno.celo.org', 'mainnet.base.org',
+  'arb1.arbitrum.io', 'rpc.gnosischain.com', 'publicnode.com', 'blockscout.com',
 ]);
 
 const TEXT_EXT = new Set(['.js', '.md', '.json', '.txt', '.html', '.sh', '.yml', '.yaml']);
@@ -64,7 +72,17 @@ function loadDomains(datasetPath) {
     }
     for (const m of line.matchAll(/mailto:[^"\s,]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g)) toks.add(m[1].toLowerCase());
   }
-  for (const a of ALLOW) toks.delete(a);
+  // Suffix-aware: an allowed name covers its subdomains, because the infrastructure entries
+  // above appear as `<chain>-rpc.publicnode.com` and friends. This is a deliberate loosening —
+  // it means a genuine leak sitting on a subdomain of an allowlisted name would be missed. That
+  // is acceptable only because every entry is a public service I chose from documentation, and
+  // it is the reason this list must stay short and hand-held rather than growing to silence
+  // whatever the check flags next.
+  for (const t of [...toks]) {
+    for (const a of ALLOW) {
+      if (t === a || t.endsWith(`.${a}`)) { toks.delete(t); break; }
+    }
+  }
   return toks;
 }
 

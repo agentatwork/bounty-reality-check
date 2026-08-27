@@ -307,15 +307,24 @@ and the pool only grows — RSS climbed 194→372 MB over the first 6k domains. 
 bound it from application code: `setGlobalDispatcher` lives in the `undici` package, not in
 node's built-in copy.
 
-The cap is there to prevent an OOM kill, and *only* that. Throughput also sagged over the same
-period (22/s → 15/s) and it is tempting to blame the same cause, but a restart is a natural
-experiment and it says otherwise: RSS reset 372→189 MB and the rate went **down**, 21.6→20.3/s.
-Freeing the memory did not buy back any speed. Most of the slowdown is the domain list itself —
-deeper into the ranking, more hosts are slow or dead, and the timeout rate climbs from 5.5% to
-7.9% while the share that answers at all falls from 72% to 68%. At an 8-second timeout that
-accounts for perhaps a fifth of the loss; the rest is unexplained. Recycling on memory is
-justified as crash safety, not as a performance tuning knob, and setting the cap lower would buy
-nothing.
+The cap prevents an OOM kill. It also recovers throughput, but only near the heap limit — and
+the difference matters, because each restart is a controlled experiment (same rank position on
+both sides) and the two disagree:
+
+| recycle at | RSS before→after | rate before→after |
+|---|---|---|
+| rank ~25k | 372→189 MB | 21.6→20.3/s — no gain |
+| rank ~42k | 654→227 MB | 14.6→17.5/s — **+20%** |
+
+Freeing memory is not proportionally worth speed. What costs speed is running *against the heap
+cap*: at 654 MB RSS with `--max-old-space-size=512`, V8 is doing constant major GCs, and
+recycling buys that back. At 372 MB there is nothing to buy. So lowering the cap further would
+gain nothing; the point is to recycle *before* GC thrash, not to keep memory small.
+
+Separately, most of the long-run slowdown is the domain list itself, not the process. Deeper
+into the ranking the timeout rate climbs from 5.5% to 7.9% and the share of hosts that answer
+at all falls from 72% to 68%. At an 8-second timeout that explains perhaps a fifth of it; the
+remainder is unattributed.
 
 So the restart is the design, not the failure. The scanner writes append-only JSONL and rebuilds
 a skip-set from its own output, which makes a restart cost one file re-read. The supervisor
