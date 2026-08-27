@@ -5,8 +5,11 @@
  *   node analyze_securitytxt.js <scan.jsonl> <out.json> [dnsConcurrency]
  *
  * The existing literature on security.txt stops at the regex. "63.5% of Contact emails were
- * valid" means the string had an @ in it — not that a mailbox exists, not that the domain
- * resolves, and certainly not that the domain is still owned by the people who published it.
+ * valid" means the address matched one of several validation regexes — not that a mailbox
+ * exists, not that the domain resolves, and certainly not that the domain is still owned by
+ * the people who published it. (The largest single reason for the rest was a missing mailto:
+ * prefix, 34.8%: a formatting defect, not an undeliverable address. Quoting the 63.5% without
+ * it invites the reader to assume the other third bounce.)
  * This asks the question one step downstream: for each Contact, does the domain exist, and if
  * it does not, could a stranger register it and start receiving the reports?
  *

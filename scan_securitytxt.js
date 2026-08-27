@@ -11,7 +11,8 @@
  * Existing measurement work on security.txt (Digital Threats 2023, MADWeb 2022, URIports
  * 2024/25) counts ADOPTION and SYNTACTIC CONFORMITY — is Expires present, does the Contact
  * match an email regex. None of it resolves the contact. "63.5% of emails valid" means the
- * string looked like an address, not that anything would receive mail sent to it. The
+ * address matched one of their validation regexes, not that anything would receive mail sent
+ * to it — and the biggest reason for the other third was a missing mailto: prefix (34.8%). The
  * interesting question is downstream of the regex: does the domain exist, and if not, can
  * a stranger register it and collect the reports?
  *
