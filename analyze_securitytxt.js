@@ -379,6 +379,50 @@ async function main() {
     for (const c of portals) bump('portal_contact_verdicts', c.verdict);
     for (const c of portals) if (c.portal_why) bump('portal_http', c.portal_why);
   }
+  // --- Concentration: how many organisations ride on each third-party contact domain? ---
+  //
+  // A per-site hijack rate treats every exposure as independent, and they are not. Third-party
+  // contacts pool: a bounty platform, an MSSP, a parent company's abuse desk. If one of those
+  // registrable domains lapses, it is not one org losing its reports, it is every org that
+  // pointed at it, simultaneously and silently. So the quantity that matters is not the rate,
+  // it is the blast radius of the largest single point of failure -- and that number is
+  // meaningful even if the hijack count comes out at zero, because it says what a future lapse
+  // would cost rather than what today's happens to.
+  //
+  // Registrable domain, not hostname: `example.com/acme` and `acme.example.com` share one
+  // registration and therefore one fate.
+  const citedBy = new Map();
+  for (const f of files) {
+    const siteReg = publicSuffixOf(f.domain).registrable;
+    for (const p of parsedBySite.get(f.domain) || []) {
+      if (!p.domain) continue;
+      const reg = publicSuffixOf(p.domain).registrable;
+      if (!reg || reg === siteReg) continue;
+      if (!citedBy.has(reg)) citedBy.set(reg, { sites: new Set(), state: (facts.get(p.domain) || {}).state });
+      citedBy.get(reg).sites.add(f.domain);
+    }
+  }
+  const ranked = [...citedBy.entries()]
+    .map(([reg, v]) => ({ reg, n: v.sites.size, state: v.state }))
+    .sort((a, b) => b.n - a.n);
+  const totalCites = ranked.reduce((s, r) => s + r.n, 0);
+  const share = (k) => totalCites ? +(100 * ranked.slice(0, k).reduce((s, r) => s + r.n, 0) / totalCites).toFixed(1) : 0;
+  out.contact_concentration = {
+    distinct_third_party_contact_domains: ranked.length,
+    site_citations: totalCites,
+    // Names deliberately omitted -- this array is the shape of the distribution, nothing else.
+    top_sizes: ranked.slice(0, 20).map(r => r.n),
+    share_top1_pct: share(1), share_top5_pct: share(5), share_top10_pct: share(10), share_top20_pct: share(20),
+    domains_serving_10plus_sites: ranked.filter(r => r.n >= 10).length,
+    sites_behind_domains_serving_10plus: ranked.filter(r => r.n >= 10).reduce((s, r) => s + r.n, 0),
+    singletons: ranked.filter(r => r.n === 1).length,
+    // The actual, measured blast radius: the most sites depending on one contact domain that
+    // is currently registerable by a stranger. Zero is a real and publishable answer.
+    worst_hijackable_blast_radius: ranked.filter(r => r.state === 'UNREGISTERED').reduce((m, r) => Math.max(m, r.n), 0),
+    hijackable_contact_domains: ranked.filter(r => r.state === 'UNREGISTERED').length,
+    sites_behind_hijackable_contact_domains: ranked.filter(r => r.state === 'UNREGISTERED').reduce((s, r) => s + r.n, 0),
+  };
+
   out.domain_states = {};
   for (const [, fx] of facts) out.domain_states[fx.state] = (out.domain_states[fx.state] || 0) + 1;
   out.sites_with_hijackable_email = out.sites.filter(s => s.hijackable_email).length;
@@ -394,6 +438,14 @@ async function main() {
   console.log(`\nsites with a hijackable EMAIL contact:  ${out.sites_with_hijackable_email}`);
   console.log(`sites with a hijackable PORTAL contact: ${out.sites_with_hijackable_portal}`);
   console.log(`sites with NO working contact at all:   ${out.sites_with_no_working_contact} / ${files.length}`);
+
+  const cc = out.contact_concentration;
+  console.log('\n--- third-party contact concentration (names omitted by design) ---');
+  console.log(`  ${cc.distinct_third_party_contact_domains} distinct contact domains carry ${cc.site_citations} site citations`);
+  console.log(`  top 1 / 5 / 10 / 20 share: ${cc.share_top1_pct}% / ${cc.share_top5_pct}% / ${cc.share_top10_pct}% / ${cc.share_top20_pct}%`);
+  console.log(`  largest 20 by site count:  ${cc.top_sizes.join(' ')}`);
+  console.log(`  ${cc.domains_serving_10plus_sites} domains serve >=10 sites each (${cc.sites_behind_domains_serving_10plus} citations); ${cc.singletons} serve exactly one`);
+  console.log(`  hijackable contact domains: ${cc.hijackable_contact_domains}, worst blast radius: ${cc.worst_hijackable_blast_radius} site(s)`);
 
   // Is Expires a proxy for maintenance, or just a compliance checkbox? Rate of unreachable
   // contacts WITHIN each expiry state -- if the rates match, a stale date tells you nothing
