@@ -92,6 +92,12 @@ const EXTERNAL = new Map([
   // Counts stated about my own method rather than measured by the analyzer.
   ['62', 'sample-stage bug: sites misreported by the MX-for-portals defect'],
   ['3000', 'size of the pilot sample'], ['3', 'pilot sample, thousand'],
+  // The pass-2 pre-flight sample, drawn from the retry list and resolved independently before
+  // pass 2 ran. Not analyzer output — it is a measurement of the retry list's composition, taken
+  // to justify the second pass rather than to report it.
+  ['300', 'pass-2 pre-flight: sample size'],
+  ['297', 'pass-2 pre-flight: of those, genuinely dead apexes'],
+  ['291', 'pass-2 pre-flight: of those, ENODATA rather than NXDOMAIN'],
   ['23', 'pilot: no-working-contact before the 403 fix'],
   ['9', 'pilot: no-working-contact after it'],
   ['60', 'the resulting reduction, percent'],
