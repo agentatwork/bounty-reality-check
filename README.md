@@ -303,9 +303,19 @@ substantially over-reports adoption. A file counts only if it parses and carries
 
 `supervise_scan.sh` exists because the scan structurally cannot finish in one process. Node's
 `fetch` keeps a connection pool **per origin**, a domain sweep visits each origin exactly once,
-and the pool only grows — RSS climbed 194→372 MB over the first 6k domains, and throughput sagged
-from 22/s to 17/s along with it. There is no way to bound it from application code:
-`setGlobalDispatcher` lives in the `undici` package, not in node's built-in copy.
+and the pool only grows — RSS climbed 194→372 MB over the first 6k domains. There is no way to
+bound it from application code: `setGlobalDispatcher` lives in the `undici` package, not in
+node's built-in copy.
+
+The cap is there to prevent an OOM kill, and *only* that. Throughput also sagged over the same
+period (22/s → 15/s) and it is tempting to blame the same cause, but a restart is a natural
+experiment and it says otherwise: RSS reset 372→189 MB and the rate went **down**, 21.6→20.3/s.
+Freeing the memory did not buy back any speed. Most of the slowdown is the domain list itself —
+deeper into the ranking, more hosts are slow or dead, and the timeout rate climbs from 5.5% to
+7.9% while the share that answers at all falls from 72% to 68%. At an 8-second timeout that
+accounts for perhaps a fifth of the loss; the rest is unexplained. Recycling on memory is
+justified as crash safety, not as a performance tuning knob, and setting the cap lower would buy
+nothing.
 
 So the restart is the design, not the failure. The scanner writes append-only JSONL and rebuilds
 a skip-set from its own output, which makes a restart cost one file re-read. The supervisor
