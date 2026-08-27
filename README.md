@@ -493,6 +493,7 @@ node parity_test.js          # the scanner's private copies still agree with stx
 node concentration_test.js   # concentration arithmetic vs hand-computed answers
 node apexfold_test.js        # two probes of one site fold into one row
 node mkwwwlist_test.js       # the second pass gets exactly the domains the first could not see
+node wilson_test.js          # the confidence intervals, against closed forms derived by hand
 ```
 
 Both exist because the numbers they cover get published, and both were verified by reading the

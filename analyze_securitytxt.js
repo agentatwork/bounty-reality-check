@@ -219,7 +219,9 @@ function expiryState(exp, nowMs) {
 }
 
 /**
- * Wilson score interval for a proportion.
+ * Wilson score interval for a proportion, now in stats.js so it can be tested on its own. It was
+ * inline here, where the only way to exercise it was to run a whole analysis and read a
+ * percentage off the end — no way to check it against a value known in advance.
  *
  * Used because the expiry-vs-reachability cross-tab is the writeup's one novel correlation, and
  * on a test slice it already looked like a finding off three events against zero. Wilson rather
@@ -230,14 +232,7 @@ function expiryState(exp, nowMs) {
  * test, so it will occasionally call a real difference unsupportable. That is the error worth
  * making here.
  */
-function wilson(k, n, z = 1.96) {
-  if (!n) return [0, 0];
-  const p = k / n, z2 = z * z;
-  const denom = 1 + z2 / n;
-  const centre = (p + z2 / (2 * n)) / denom;
-  const half = (z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))) / denom;
-  return [Math.max(0, centre - half), Math.min(1, centre + half)];
-}
+const { wilson, separates } = require('./stats');
 
 async function main() {
   const NOW = Date.parse(process.env.SURVEY_NOW || '2026-08-27T00:00:00Z');
@@ -636,10 +631,9 @@ async function main() {
   // Say out loud whether the comparison supports a claim, because the raw percentages will look
   // like a finding whether or not they are one, and this is the cross-tab the writeup leans on.
   {
-    const rs = Object.entries(out.expiry_x_reach_rates);
-    const sep = rs.filter(([, a]) => rs.some(([, b]) => a.ci95_lo > b.ci95_hi));
-    out.expiry_x_reach_separates = sep.length > 0;
-    console.log(sep.length
+    const sep = separates(out.expiry_x_reach_rates);
+    out.expiry_x_reach_separates = sep;
+    console.log(sep
       ? '  -> at least one expiry state has a non-overlapping CI: a real difference'
       : '  -> all 95% CIs overlap: NO supportable difference between expiry states');
   }
