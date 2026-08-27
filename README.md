@@ -380,6 +380,17 @@ recycles the process at an RSS cap with a clean SIGTERM and restarts it if it di
 ./supervise_scan.sh tranco200k.csv out.jsonl scan.log 32
 ```
 
+It recycled the scanner six times over the 200k list — five on the RSS cap and once on a hard V8
+out-of-memory crash, which from the outside is the same event and gets the same response.
+
+Two details in it are worth copying into any supervisor of this shape. The PID file is derived
+from the output path rather than fixed, because two passes of the same scan overlap in practice
+and a shared PID file means whatever is watching the first run silently starts following the
+second. And a restart that appends **no** records is counted separately from one that appends
+some: recycling on memory is normal and open-ended, but three consecutive restarts with no
+progress is a crash loop — an empty list, a bad path — and burning forty restarts on it in two
+minutes produces a log that blames the network for a wrong argument.
+
 Two other things that a long unattended scan needs, both learned the expensive way:
 
 - **Always cancel a response body you don't read.** Returning early on a non-ok response leaves
