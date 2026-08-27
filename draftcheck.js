@@ -46,6 +46,12 @@ const EXTERNAL = new Map([
   ['46', 'URIports 2024: missing Expires'],
   ['18', 'URIports 2024: already expired'],
   ['13', 'URIports 2025: already expired'],
+  // The 2025 halves of the two pairs above. I had quoted adoption from the 2025 scan and
+  // compliance from the 2024 one in the same bullet, which is mixing operating points, and the
+  // number I happened to keep was the worse-looking one: compliance went 19% -> 44% in a year.
+  // Both halves of every pair are now in the article so the trend is visible rather than cropped.
+  ['44', 'URIports 2025: RFC-compliant share'],
+  ['45', 'URIports 2025: missing Expires'],
   ['1.78', 'iotdef 2026: Expires adoption, before'],
   ['88.61', 'iotdef 2026: Expires adoption, after'],
   ['7.3', 'iotdef 2026: already expired'],
@@ -62,9 +68,15 @@ const EXTERNAL = new Map([
   // (zero hits for resolv/MX/DNS/NXDOMAIN/unregist/takeover/WHOIS/RDAP across the whole article).
   ['83', 'iotdef 2026: contacts on a domain other than the host'],
   ['15', 'iotdef 2026: self-hosted contacts'],
-  ['9.9', 'BSI/CRA: publish a file'],
-  ['7.0', 'BSI/CRA: conforming'],
-  ['1.8', 'BSI/CRA: headline percentage in the cited URL'],
+  // These three were filed under one label, "BSI/CRA", and they are not one study. 1.8% is the
+  // BSI's own Cyberdome measurement of German website operators; 9.9% and 7.0% are CVD Portal's
+  // separate scan of 342 CRA-scope manufacturers. Merging them under the more authoritative name
+  // borrowed the BSI's credibility for someone else's numbers — and the someone else sells a
+  // scanner. Verified against the page, which is explicit that the two populations differ.
+  ['1.8', 'BSI Cyberdome: German website operators publishing a file'],
+  ['9.9', 'CVD Portal 2026: CRA-scope manufacturers publishing any file'],
+  ['7.0', 'CVD Portal 2026: publishing an RFC 9116 conforming file'],
+  ['342', 'CVD Portal 2026: manufacturers in the sample — the whole n'],
   // Both verified against the open-access PDF, not against a search summary. The pair is quoted
   // together on purpose: 63.5% "valid" is a regex verdict, and 34.8% — the largest single reason
   // for the rest — is a missing `mailto:` prefix. Quoting only the first invites the reader to
