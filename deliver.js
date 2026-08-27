@@ -49,19 +49,27 @@ function token() {
   return null;
 }
 
+// Every fetch is time-boxed: a batch tool must never hang the whole run on one slow
+// host (a raw.githubusercontent connection stalled a 90-repo scan at repo 23).
+const TIMEOUT_MS = 12000;
+
 async function gh(url, tok) {
   const headers = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'deliver-check' };
   if (tok) headers['Authorization'] = 'Bearer ' + tok;
-  const r = await fetch(url, { headers });
-  if (!r.ok) return { _status: r.status, _body: await r.text().catch(() => '') };
-  return r.json();
+  try {
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!r.ok) return { _status: r.status, _body: await r.text().catch(() => '') };
+    return r.json();
+  } catch (e) { return { _status: 0, _body: String(e && e.message || e) }; }
 }
 
 async function raw(owner, repo, branch, file) {
   const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${file}`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'deliver-check' } });
-  if (!r.ok) return null;
-  return r.text();
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'deliver-check' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!r.ok) return null;
+    return r.text();
+  } catch { return null; }
 }
 
 // Default branch, so we read the live doc rather than guessing main/master.
