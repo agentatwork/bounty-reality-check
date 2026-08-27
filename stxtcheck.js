@@ -23,7 +23,7 @@
 'use strict';
 const {
   parseContact, expiryState, domainFacts, emailVerdict, urlVerdict, probePortal, fetchSecurityTxt,
-  triage,
+  triage, canonicalState,
 } = require('./stxtlib');
 const { publicSuffixOf } = require('./psl');
 
@@ -129,14 +129,9 @@ async function main() {
   out.expiry = exp;
   out.contacts = rows;
 
-  // Canonical: RFC 9116 2.5.2 — if the retrieval URI is not listed, do not trust the file.
-  if (p.canonical.length) {
-    const fetched = res.final_url || res.url;
-    let fh = null; try { fh = new URL(fetched).hostname.toLowerCase().replace(/^www\./, ''); } catch {}
-    const hosts = p.canonical.map(c => { try { return new URL(c).hostname.toLowerCase().replace(/^www\./, ''); } catch { return null; } });
-    out.canonical = p.canonical.some(c => c.trim() === fetched) ? 'exact_match'
-      : (fh && hosts.includes(fh)) ? 'host_match_path_differs' : 'MISMATCH';
-  } else out.canonical = 'absent';
+  // Canonical: RFC 9116 §2.5.2. Rule, the three states, and the one deliberate deviation from the
+  // spec are all documented on canonicalState() in stxtlib.
+  out.canonical = canonicalState(p.canonical, res.final_url || res.url);
 
   // Verdict, result string and exit code all come from stxtlib.triage — see the contract note
   // there. Kept in the library rather than here so exit_codes_test.js can drive all five outcomes

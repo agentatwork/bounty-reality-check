@@ -47,6 +47,7 @@
 const fs = require('fs');
 const dns = require('dns');
 const { publicSuffixOf } = require('./psl');
+const { canonicalState } = require('./stxtlib');
 
 const [, , inPath, outPath, concArg, rankArg] = process.argv;
 if (!inPath || !outPath) {
@@ -533,16 +534,13 @@ async function main() {
     // §2.5.2: "If the retrieved URI is not listed among the canonical URIs, the contents of the
     // file SHOULD NOT be trusted." A mismatch is usually a file copy-pasted from another org and
     // never edited — which means its Contact points at somebody else entirely.
-    const canon = f.canonical || [];
-    if (!canon.length) bump('canonical_state', 'absent');
-    else {
-      const fetched = f.final_url || `https://${f.domain}/.well-known/security.txt`;
-      let fh = null; try { fh = new URL(fetched).hostname.toLowerCase().replace(/^www\./, ''); } catch {}
-      const hosts = canon.map(c => { try { return new URL(c).hostname.toLowerCase().replace(/^www\./, ''); } catch { return null; } });
-      if (canon.some(c => c.trim() === fetched)) bump('canonical_state', 'exact_match');
-      else if (fh && hosts.includes(fh)) bump('canonical_state', 'host_match_path_differs');
-      else bump('canonical_state', 'MISMATCH_untrusted_per_spec');
-    }
+    // One vocabulary for both tools — the rule and its one deliberate deviation live on
+    // canonicalState() in stxtlib. These were two hand-maintained copies until now, and they had
+    // ALREADY drifted: this file labelled the failing state 'MISMATCH_untrusted_per_spec' while
+    // stxtcheck.js called the identical state 'MISMATCH', so the survey and the tool a reader runs
+    // on their own domain reported the same verdict under two names. Exactly the drift
+    // parity_test.js was written to catch, in the one branch it did not cover.
+    bump('canonical_state', canonicalState(f.canonical, f.final_url || `https://${f.domain}/.well-known/security.txt`));
     for (const c of emails) bump('email_contact_verdicts', c.verdict);
     for (const c of portals) bump('portal_contact_verdicts', c.verdict);
     for (const c of portals) if (c.portal_why) bump('portal_http', c.portal_why);

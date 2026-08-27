@@ -198,7 +198,40 @@ function main() {
     if (lr !== sr) report('looksReal', body, String(lr), String(sr));
   }
 
-  console.log(`checked ${contacts.length} contact strings, ${DNS_FACTS.length} DNS states, ${EXPIRIES.length} expiry values, ${BODIES.length} file bodies`);
+  // canonicalState is now a single copy in stxtlib, so there is nothing left to compare — which is
+  // why it needs a plain unit test instead. It got one only after the two hand-maintained copies
+  // were found to have silently disagreed: the analyzer said 'MISMATCH_untrusted_per_spec' where
+  // stxtcheck said 'MISMATCH', so the survey and the tool a reader runs on their own domain
+  // reported one verdict under two names, and this file's whole premise never covered the branch.
+  const WK = '/.well-known/security.txt';
+  const CANON_CASES = [
+    [[], `https://a.example${WK}`, 'absent'],
+    [null, `https://a.example${WK}`, 'absent'],
+    // Exact string match on the RETRIEVAL URI, which is what §2.5.2 rules on.
+    [[`https://a.example${WK}`], `https://a.example${WK}`, 'exact_match'],
+    [[' https://a.example' + WK + ' '], `https://a.example${WK}`, 'exact_match'],
+    // The deliberate deviation: identical path, host differs only by `www.`. The old name for
+    // this state claimed the PATH differed, which was false in precisely this case.
+    [[`https://a.example${WK}`], `https://www.a.example${WK}`, 'host_match_uri_differs'],
+    [[`https://www.a.example${WK}`], `https://a.example${WK}`, 'host_match_uri_differs'],
+    // Same host, genuinely different path — also the weaker state, and here the old name was right.
+    [[`https://a.example/security.txt`], `https://a.example${WK}`, 'host_match_uri_differs'],
+    // A different registrable domain is a real mismatch and must never be normalised into a match.
+    // This is the x.com/twitter.com case quoted in the article.
+    [[`https://b.example${WK}`], `https://a.example${WK}`, 'MISMATCH'],
+    // `www.` stripping must not make two distinct domains collide.
+    [[`https://www.b.example${WK}`], `https://a.example${WK}`, 'MISMATCH'],
+    // Unparseable Canonical must fail closed, not throw and not match.
+    [['not a url'], `https://a.example${WK}`, 'MISMATCH'],
+    // One good entry among junk still matches: §2.5.2 says "listed within ANY canonical fields".
+    [['not a url', `https://a.example${WK}`], `https://a.example${WK}`, 'exact_match'],
+  ];
+  for (const [canon, fetched, want] of CANON_CASES) {
+    const got = lib.canonicalState(canon, fetched);
+    if (got !== want) report('canonicalState', `${JSON.stringify(canon)} vs ${fetched}`, want, got);
+  }
+
+  console.log(`checked ${contacts.length} contact strings, ${DNS_FACTS.length} DNS states, ${EXPIRIES.length} expiry values, ${BODIES.length} file bodies, ${CANON_CASES.length} canonical states`);
   console.log(diff ? `DIVERGED — ${diff} disagreement(s)` : 'AGREE — the two copies are behaviourally identical');
   process.exit(diff ? 1 : 0);
 }

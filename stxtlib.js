@@ -82,6 +82,37 @@ function expiryState(exp, nowMs) {
   return t < nowMs ? 'expired' : 'valid';
 }
 
+/**
+ * RFC 9116 §2.5.2: "If this field appears within a security.txt file and the URI used to retrieve
+ * that file is not listed within any canonical fields, then the contents of the file SHOULD NOT be
+ * trusted." Note *the URI used to retrieve* — the final URL after redirects, not what the user
+ * typed. Comparing against the typed URL reports a violation at every site that redirects to www,
+ * which is most of them.
+ *
+ * Three states, and the middle one is a DELIBERATE DEVIATION from the spec, documented in the
+ * article: the RFC's rule is an exact string comparison, so a file fetched from www.example.com
+ * whose Canonical names the bare apex is formally not to be trusted. Reporting that as a violation
+ * floods the output for sites that are merely inconsistent about `www`, so a www-insensitive host
+ * match is reported as its own weaker state rather than as either a match or a mismatch. A reader
+ * comparing these counts against a strict validator needs to know the direction, which is why it
+ * is a third state and not folded into either neighbour.
+ *
+ * Lives here because it was duplicated verbatim in stxtcheck.js and analyze_securitytxt.js, which
+ * is the drift parity_test.js exists to prevent and did not cover — its own header says the
+ * duplication "has already cost something concrete". Renaming the middle state by hand in two
+ * files, with nothing failing had I done one, is that same cost arriving a third time.
+ */
+function canonicalState(canonical, fetchedUrl) {
+  if (!canonical || !canonical.length) return 'absent';
+  if (canonical.some(c => c.trim() === fetchedUrl)) return 'exact_match';
+  const bare = (u) => { try { return new URL(u).hostname.toLowerCase().replace(/^www\./, ''); } catch { return null; } };
+  const fh = bare(fetchedUrl);
+  // Named for what actually matched. The old name, host_match_path_differs, was wrong in the
+  // commonest case it fires on: www.example.com against a Canonical naming the bare apex has an
+  // IDENTICAL path and differs only in the host, which this very function normalises away.
+  return (fh && canonical.map(bare).includes(fh)) ? 'host_match_uri_differs' : 'MISMATCH';
+}
+
 function makeResolver(servers) {
   const r = new dns.promises.Resolver({ timeout: 5000, tries: 2 });
   r.setServers(servers);
@@ -267,7 +298,7 @@ function triage(rows, expiry) {
 }
 
 module.exports = {
-  UA, RESOLVERS, parseSecurityTxt, looksReal, parseContact, expiryState,
+  UA, RESOLVERS, parseSecurityTxt, looksReal, parseContact, expiryState, canonicalState,
   domainFacts, emailVerdict, urlVerdict, probePortal, fetchSecurityTxt, resolveWith, loadTlds,
   triage, BROKEN_VERDICTS, WORKING_VERDICTS,
 };
