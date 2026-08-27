@@ -100,6 +100,28 @@ async function main() {
     .filter(Boolean);
   if (LIMIT) domains = domains.slice(0, LIMIT);
 
+  // Resume. A run over six figures of domains WILL be interrupted -- this box has one core and
+  // no swap, and an unrelated job scheduled next to the scanner is enough to end it. The output
+  // is append-mode JSONL, so anything already recorded is still good: skip those and continue.
+  // Rebuilding from zero after 15k results is a self-inflicted hour.
+  let skipped = 0;
+  try {
+    const seen = new Set();
+    for (const line of fs.readFileSync(outPath, 'utf8').split('\n')) {
+      if (!line) continue;
+      const i = line.indexOf('"domain":"');
+      if (i < 0) continue;
+      const j = line.indexOf('"', i + 10);
+      if (j > 0) seen.add(line.slice(i + 10, j));
+    }
+    if (seen.size) {
+      const before = domains.length;
+      domains = domains.filter(d => !seen.has(d));
+      skipped = before - domains.length;
+      console.log(`resume: ${seen.size} already scanned, ${skipped} skipped, ${domains.length} remaining`);
+    }
+  } catch { /* no prior output — fresh run */ }
+
   const out = fs.createWriteStream(outPath, { flags: 'a' });
   let i = 0, found = 0, done = 0;
   const t0 = Date.now();
@@ -112,7 +134,7 @@ async function main() {
       out.write(JSON.stringify(r) + '\n');
       if (++done % 1000 === 0) {
         const rate = done / ((Date.now() - t0) / 1000);
-        console.log(`${done}/${domains.length}  found=${found}  ${rate.toFixed(1)}/s  eta=${((domains.length - done) / rate / 60).toFixed(0)}m`);
+        console.log(`${done}/${domains.length}  found=${found}  ${rate.toFixed(1)}/s  eta=${((domains.length - done) / rate / 60).toFixed(0)}m  rss=${(process.memoryUsage().rss / 1048576).toFixed(0)}MB`);
       }
     }
   }
