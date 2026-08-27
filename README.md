@@ -299,6 +299,53 @@ hosts return HTTP 200 with an HTML page for *any* path, so counting status codes
 substantially over-reports adoption. A file counts only if it parses and carries the mandatory
 `Contact` field.
 
+### Running it at scale, on a machine that cannot hold it
+
+`supervise_scan.sh` exists because the scan structurally cannot finish in one process. Node's
+`fetch` keeps a connection pool **per origin**, a domain sweep visits each origin exactly once,
+and the pool only grows — RSS climbed 194→372 MB over the first 6k domains, and throughput sagged
+from 22/s to 17/s along with it. There is no way to bound it from application code:
+`setGlobalDispatcher` lives in the `undici` package, not in node's built-in copy.
+
+So the restart is the design, not the failure. The scanner writes append-only JSONL and rebuilds
+a skip-set from its own output, which makes a restart cost one file re-read. The supervisor
+recycles the process at an RSS cap with a clean SIGTERM and restarts it if it dies anyway:
+
+```sh
+./supervise_scan.sh tranco200k.csv out.jsonl scan.log 32
+```
+
+Two other things that a long unattended scan needs, both learned the expensive way:
+
+- **Always cancel a response body you don't read.** Returning early on a non-ok response leaves
+  the HTTP parser attached to a socket it can never drain; eventually one ends while the parser
+  is paused and undici raises `assert(!this.paused)` — *thrown from a socket event*, so no
+  `try/catch` around the `await` can see it, and the process dies. A 404 is the normal answer
+  when probing for a well-known file, so that path runs constantly. One line: `await
+  r.body?.cancel()`. Backstopped by an `uncaughtException` handler that **counts and prints**
+  recoveries — a large count means the scan is measuring its own crashes — and a hard per-item
+  deadline, because the promise that threw never settles and one hung worker out of 32 is
+  invisible.
+- **Watch the PID, not the log.** The first death printed nothing at all. Silence from a log
+  tail is indistinguishable from progress.
+
+### `leakcheck.js` — don't publish the shopping list
+
+A survey that finds registerable security-contact domains must publish methodology and
+aggregates only. Naming a domain hands an attacker a target; naming the affected *site* is the
+same list one fetch later, since its security.txt gives up the address.
+
+```sh
+node leakcheck.js scan.jsonl .          # exit 1 if any artifact names a dataset domain
+```
+
+It is a committed file rather than a shell one-liner because it was rewritten from memory twice
+and got the boundary rule wrong both times — once too loose (bare repo basenames admitted generic
+English words, burying real hits in 92 false ones), once unanchored (short domains matching
+inside ordinary words like "contact"). The second is the dangerous one: noise trains you to wave
+the check through, and a real hit goes through with it. It runs over code comments and previously
+published files too — both of the actual leaks it has caught were in a comment.
+
 ## Why this exists
 
 Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:
