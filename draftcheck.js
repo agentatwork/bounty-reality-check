@@ -53,7 +53,14 @@ const EXTERNAL = new Map([
   ['9.9', 'BSI/CRA: publish a file'],
   ['7.0', 'BSI/CRA: conforming'],
   ['1.8', 'BSI/CRA: headline percentage in the cited URL'],
-  ['63.5', 'quoted from prior work: "valid" contact emails'],
+  // Both verified against the open-access PDF, not against a search summary. The pair is quoted
+  // together on purpose: 63.5% "valid" is a regex verdict, and 34.8% — the largest single reason
+  // for the rest — is a missing `mailto:` prefix. Quoting only the first invites the reader to
+  // assume the other third were undeliverable addresses. They were badly formatted ones.
+  ['63.5', 'security.txt Revisited: emails accepted by their validation regex'],
+  ['34.8', 'security.txt Revisited: emails missing the mailto: prefix'],
+  ['42', 'security.txt Revisited: successful scans'],
+  ['55', 'security.txt Revisited: weeks of scanning'],
   ['3609234', 'DOI of security.txt Revisited'],
   ['1145', 'DOI prefix'],
   ['2023', 'year, Digital Threats'], ['2024', 'year'], ['2025', 'year'],
