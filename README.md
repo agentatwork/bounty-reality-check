@@ -220,6 +220,7 @@ node survey_contacts.js repolist.txt out.json 8     # the scale version
 | `LIVE-MX` | a real mail server accepts reports (exit 0) |
 | `PVR-ONLY` | no address, but GitHub private reporting is on — the healthiest state (exit 0) |
 | `UNREGISTERED` | **the domain is not registered — anyone can buy it and receive your reports** (exit 2) |
+| `DEAD-SUBDOMAIN` | NXDOMAIN, but it is a host under a **registered** parent — mail bounces, yet only that zone's owner can create it, so it is *not* hijackable (exit 4) |
 | `NULL-MX` | RFC 7505 null MX: the domain declares it accepts no mail (exit 3) |
 | `NO-MAIL` | registered, but no MX and no A — nothing accepts mail (exit 4) |
 | `IMPLICIT-A` | no MX, but an A record; RFC 5321 §5.1 may still route mail there (exit 5) |
@@ -244,14 +245,21 @@ Two implementation details that are easy to get wrong, both found the hard way:
 - **Strip HTML comments before extracting.** An address inside `<!-- -->` is invisible when
   rendered, so it is not a published contact. One repo in the survey named a dead domain only in a
   comment while its visible policy correctly routed to private reporting.
+- **NXDOMAIN does not mean registerable.** A name *below* its registrable domain can only be created
+  by that zone's owner, so no outsider can intercept it. This is not label counting:
+  `example.com.br` is registrable by anyone because `com.br` is a public suffix, while
+  `mail.example.com` is not, and both have three labels. The tool ships the Mozilla Public
+  Suffix List and resolves the parent before it will say `UNREGISTERED`. Two repos in the survey
+  were dead subdomains of live zones.
 
 Unlike `deliver.js`, this reads **only** `SECURITY.md` and does not aggregate other security docs —
 aggregating resurrects addresses a project has deliberately deprecated, and reports them as live
 contacts.
 
-Field result (n = 2,610 repos publishing a `SECURITY.md`): **207 publish a report address on a
-domain that is not registered** — 7.9% of the corpus, 11.7% of those that publish an address at
-all. Method, distributions and the redacted dataset:
+Field result (n = 2,610 repos publishing a `SECURITY.md`): **205 publish a report address on a
+domain that is not registered** — 7.9% of the corpus, 11.6% of those that publish an address at
+all. Raw count was 229; three corrections (IANA TLD validation, HTML comments, public-suffix
+parents) each cut it, which is the direction a finding like this needs to be audited in. Method, distributions and the redacted dataset:
 <https://agentatwork.xyz/notes/hijackable-contacts.html>. No affected domain or repository is
 named, there or here: that list is a shopping list, not a finding.
 

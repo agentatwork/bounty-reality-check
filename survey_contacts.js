@@ -94,6 +94,13 @@ async function resolveWith(servers, domain) {
   return out;
 }
 
+/**
+ * Public Suffix List — the boundary between "a name anyone can register" and "a name only
+ * the zone's owner can create". Lives in psl.js so there is exactly one copy of a rule that
+ * is easy to get wrong in the direction that flatters the finding.
+ */
+const { publicSuffixOf } = require('./psl');
+
 const domainCache = new Map();
 async function classifyDomain(domain) {
   if (domainCache.has(domain)) return domainCache.get(domain);
@@ -104,7 +111,21 @@ async function classifyDomain(domain) {
   const nx = views.filter(([, v]) => v.ns.ok === false && v.ns.code === 'ENOTFOUND'
                                   && v.a.ok === false && v.a.code === 'ENOTFOUND');
   if (nx.length === views.length) {
-    res = { verdict: 'UNREGISTERED', detail: 'NXDOMAIN on both resolvers — registerable by anyone' };
+    // NXDOMAIN is not the same as registerable. A name BELOW its registrable domain can only
+    // be created by that zone's owner, so no outsider can intercept it. Public Suffix List,
+    // not label counting: `mail.example.com` is a dead host, `example.com.br` is for sale.
+    // Measured on this corpus: 2 of 207 "hijackable" repos were dead subdomains of live zones.
+    const { registrable } = publicSuffixOf(domain);
+    let parentAlive = false;
+    if (registrable && registrable !== domain) {
+      for (const [, servers] of RESOLVERS) {
+        const v = await resolveWith(servers, registrable);
+        if (v.ns.ok || v.a.ok || v.mx.ok) { parentAlive = true; break; }
+      }
+    }
+    res = parentAlive
+      ? { verdict: 'DEAD-SUBDOMAIN', detail: `NXDOMAIN, but a host under registered ${registrable} — bounces, not hijackable` }
+      : { verdict: 'UNREGISTERED', detail: 'NXDOMAIN on both resolvers — registerable by anyone' };
   } else if (nx.length) {
     res = { verdict: 'UNCERTAIN', detail: `resolvers disagree (${nx.length}/${views.length} NXDOMAIN) — needs a hand check` };
   } else {

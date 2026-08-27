@@ -110,6 +110,14 @@ async function resolveWith(servers, domain) {
 }
 
 /**
+ * Public Suffix List — the boundary between "a name anyone can register" and "a name only
+ * the zone's owner can create". Lives in psl.js so there is exactly one copy of a rule that
+ * is easy to get wrong in the direction that flatters the finding: a dead host inside a live
+ * zone is NOT hijackable, and it is indistinguishable from a lapsed domain by label count.
+ */
+const { publicSuffixOf } = require('./psl');
+
+/**
  * ENOTFOUND on the NS/SOA lookup is NXDOMAIN: the name is absent from its parent zone.
  * We require BOTH resolvers to agree before calling a domain unregistered — a single
  * resolver hiccup must never be enough to publish "this is takeoverable".
@@ -121,6 +129,18 @@ async function classifyDomain(domain) {
   const nx = views.filter(([, v]) => v.ns.ok === false && v.ns.code === 'ENOTFOUND'
                                   && v.a.ok === false && v.a.code === 'ENOTFOUND');
   if (nx.length === views.length) {
+    // NXDOMAIN alone does not mean "registerable". If the name sits BELOW its registrable
+    // domain and that parent is registered, the vacancy belongs to the owner, not the world.
+    const { registrable } = publicSuffixOf(domain);
+    if (registrable && registrable !== domain) {
+      const pv = [];
+      for (const [name, servers] of RESOLVERS) pv.push([name, await resolveWith(servers, registrable)]);
+      const parentAlive = pv.some(([, v]) => v.ns.ok || v.a.ok || v.mx.ok);
+      if (parentAlive) {
+        return { verdict: 'DEAD-SUBDOMAIN', exit: 4, mx: [],
+          detail: `NXDOMAIN, but it is a host under ${registrable}, which IS registered — mail bounces, yet only that zone's owner can create this name (not hijackable)` };
+      }
+    }
     return { verdict: 'UNREGISTERED', exit: 2, detail: `NXDOMAIN on ${views.map(v => v[0]).join(' + ')} (no delegation; registerable by anyone)`, mx: [] };
   }
   if (nx.length) {
@@ -157,7 +177,7 @@ async function pvrEnabled(owner, repo, tok) {
   return j && typeof j.enabled === 'boolean' ? j.enabled : null;
 }
 
-const ICON = { 'PVR-ONLY': '🛡️', 'UNREGISTERED': '🔥', 'NULL-MX': '🚫', 'NO-MAIL': '🚫', 'IMPLICIT-A': '⚠️', 'LIVE-MX': '✅', 'NO-CONTACT': '·' };
+const ICON = { 'DEAD-SUBDOMAIN': '🚫', 'PVR-ONLY': '🛡️', 'UNREGISTERED': '🔥', 'NULL-MX': '🚫', 'NO-MAIL': '🚫', 'IMPLICIT-A': '⚠️', 'LIVE-MX': '✅', 'NO-CONTACT': '·' };
 
 async function checkRepo(target, tok, jsonMode) {
   const [owner, repo] = target.split('/');
