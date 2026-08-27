@@ -50,6 +50,18 @@ const EXTERNAL = new Map([
   ['88.61', 'iotdef 2026: Expires adoption, after'],
   ['7.3', 'iotdef 2026: already expired'],
   ['240', 'iotdef 2026: domains surveyed, millions'],
+  // Read off the raw page, not the fetch summary: their 2026 row is 241,285,150 domains scanned,
+  // 573,123 with a file, 0.238%. Quoted as the widest of the four populations, which is what makes
+  // the "adoption is a statement about sampling depth" point land across three orders of magnitude.
+  ['241', 'iotdef 2026: gTLD zone-file domains scanned, millions'],
+  ['0.238', 'iotdef 2026: adoption across all gTLD zone-file domains'],
+  // The third-party/self-hosted split. This one is a CREDIT, not a comparison: they measured the
+  // same thing I do, the same way (compare registrable domains), two years earlier and on a far
+  // wider population. My section on third-party contacts must not read as if the split were my
+  // discovery — the only new part is resolving the domains afterwards, which their page never does
+  // (zero hits for resolv/MX/DNS/NXDOMAIN/unregist/takeover/WHOIS/RDAP across the whole article).
+  ['83', 'iotdef 2026: contacts on a domain other than the host'],
+  ['15', 'iotdef 2026: self-hosted contacts'],
   ['9.9', 'BSI/CRA: publish a file'],
   ['7.0', 'BSI/CRA: conforming'],
   ['1.8', 'BSI/CRA: headline percentage in the cited URL'],
