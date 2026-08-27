@@ -203,16 +203,59 @@ async function main() {
   const NOW = Date.parse(process.env.SURVEY_NOW || '2026-08-27T00:00:00Z');
   const ranks = loadRanks();
   const lines = fs.readFileSync(inPath, 'utf8').split('\n').filter(Boolean);
+
+  /**
+   * Which listed domain is this record about?
+   *
+   * The second pass (see mkwwwlist.js) re-probes `www.<domain>` for domains whose apex has no
+   * address, so its records carry a `www.` label that is in no ranking. Left alone they would
+   * land in `unranked` and — worse — be counted a SECOND time in the denominator, because the
+   * apex miss for the same domain is already in there. Adoption would then be measured against
+   * an inflated number of sites while the extra hits went to the wrong bucket.
+   *
+   * The record's own name wins if it is itself listed, so a domain that genuinely appears as
+   * `www.something` in the ranking is never folded into a different one.
+   */
+  const apexOf = (d) => {
+    if (ranks.has(d)) return d;
+    const bare = d.replace(/^www\./i, '');
+    return (bare !== d && ranks.has(bare)) ? bare : d;
+  };
+
+  // One entry per site, not per fetch. A site is counted once and is "adopting" if EITHER probe
+  // found a conforming file, which keeps the denominator comparable to published per-domain
+  // adoption figures. A hit always beats a miss regardless of which pass produced it.
+  const byApex = new Map();
+  for (const l of lines) {
+    let r; try { r = JSON.parse(l); } catch { continue; }
+    const key = apexOf(r.domain);
+    const prev = byApex.get(key);
+    // A hit beats a miss; if both passes found a file the apex one wins. Spelled out rather than
+    // left to line order, so the result does not depend on which file was concatenated first.
+    if (prev) {
+      const rHit = Boolean(r.is_security_txt), pHit = Boolean(prev.is_security_txt);
+      const better = rHit !== pHit ? rHit : (r.domain === key && prev.domain !== key);
+      if (!better) continue;
+    }
+    r._apex = key;
+    r._via = r.domain === key ? 'apex' : 'www';
+    byApex.set(key, r);
+  }
+
   const files = [];
   // Adoption needs a denominator PER BUCKET, so count every scanned domain, not just the hits.
   const scannedByBucket = {}, foundByBucket = {};
-  for (const l of lines) {
-    let r; try { r = JSON.parse(l); } catch { continue; }
-    const b = bucketOf(ranks.get(r.domain));
+  let viaWww = 0;
+  for (const r of byApex.values()) {
+    const b = bucketOf(ranks.get(r._apex));
     scannedByBucket[b] = (scannedByBucket[b] || 0) + 1;
-    if (r.is_security_txt) { r._rank = ranks.get(r.domain) || null; r._bucket = b; files.push(r); foundByBucket[b] = (foundByBucket[b] || 0) + 1; }
+    if (r.is_security_txt) {
+      r._rank = ranks.get(r._apex) || null; r._bucket = b;
+      files.push(r); foundByBucket[b] = (foundByBucket[b] || 0) + 1;
+      if (r._via === 'www') viaWww++;
+    }
   }
-  console.log(`${lines.length} scanned, ${files.length} real security.txt`);
+  console.log(`${lines.length} records, ${byApex.size} distinct sites, ${files.length} real security.txt (${viaWww} found only on www.)`);
 
   // Distinct contact domains, and the distinct portal URLs.
   const domainSet = new Set(), urlSet = new Set();
