@@ -45,9 +45,9 @@
  */
 'use strict';
 const fs = require('fs');
-const dns = require('dns');
 const { publicSuffixOf } = require('./psl');
-const { canonicalState, WORKING_VERDICTS, parseContact, emailVerdict, urlVerdict, expiryState } = require('./stxtlib');
+const { canonicalState, WORKING_VERDICTS, parseContact, emailVerdict, urlVerdict, expiryState,
+  domainFacts } = require('./stxtlib');
 
 const [, , inPath, outPath, concArg, rankArg] = process.argv;
 if (!inPath || !outPath) {
@@ -92,98 +92,26 @@ function loadRanks() {
   return m;
 }
 
-const RESOLVERS = [['google', ['8.8.8.8', '8.8.4.4']], ['cloudflare', ['1.1.1.1', '1.0.0.1']]];
 
-function makeResolver(servers) {
-  const r = new dns.promises.Resolver({ timeout: 5000, tries: 2 });
-  r.setServers(servers);
-  return r;
-}
-
-async function look(r, fn, name) {
-  try { return { ok: true, val: await r[fn](name) }; }
-  catch (e) { return { ok: false, code: e.code || 'ERR' }; }
-}
-
-async function resolveWith(servers, domain) {
-  const r = makeResolver(servers);
-  const [ns, a, mx] = await Promise.all([
-    look(r, 'resolveNs', domain), look(r, 'resolve4', domain), look(r, 'resolveMx', domain),
-  ]);
-  return { ns, a, mx };
-}
-
-/** IANA root zone — a string in a TLD that does not exist is a typo nobody can register. */
-let TLDS = null;
-async function loadTlds() {
-  if (TLDS) return TLDS;
-  const cache = '/tmp/tlds-alpha-by-domain.txt';
-  let txt;
-  try { txt = fs.readFileSync(cache, 'utf8'); }
-  catch {
-    txt = await (await fetch('https://data.iana.org/TLD/tlds-alpha-by-domain.txt')).text();
-    fs.writeFileSync(cache, txt);
-  }
-  TLDS = new Set(txt.split('\n').map(l => l.trim().toLowerCase()).filter(l => l && !l.startsWith('#')));
-  return TLDS;
-}
-
-/**
- * DNS facts about a name, with NO interpretation attached. Interpretation depends on what the
- * contact is FOR: "no MX record" condemns a mailto: address and says nothing at all about an
- * https:// disclosure form. Mixing the two taxonomies makes every large company look broken,
- * because their Contact is a web portal and portals do not have MX records.
- */
-const cache = new Map();
-async function domainFacts(domain) {
-  if (cache.has(domain)) return cache.get(domain);
-  const p = (async () => {
-    const tlds = await loadTlds();
-    const tld = domain.split('.').pop();
-    if (!tlds.has(tld)) return { state: 'INVALID-TLD', detail: `.${tld} is not in the IANA root zone` };
-
-    const views = [];
-    for (const [name, servers] of RESOLVERS) views.push([name, await resolveWith(servers, domain)]);
-
-    const nx = views.filter(([, v]) => v.ns.ok === false && v.ns.code === 'ENOTFOUND'
-                                    && v.a.ok === false && v.a.code === 'ENOTFOUND');
-    if (nx.length === views.length) {
-      // NXDOMAIN is not registerable. A name below its registrable domain can only be created
-      // by that zone's owner — it bounces, but no outsider can intercept it.
-      const { registrable } = publicSuffixOf(domain);
-      let parentAlive = false;
-      if (registrable && registrable !== domain) {
-        for (const [, servers] of RESOLVERS) {
-          const v = await resolveWith(servers, registrable);
-          if (v.ns.ok || v.a.ok || v.mx.ok) { parentAlive = true; break; }
-        }
-      }
-      return parentAlive
-        ? { state: 'DEAD-SUBDOMAIN', registrable, detail: `NXDOMAIN, but a host under registered ${registrable} — not hijackable` }
-        : { state: 'UNREGISTERED', detail: 'NXDOMAIN on both resolvers — registerable by anyone' };
-    }
-
-    const mxr = views.map(([, v]) => v.mx).find(m => m.ok && m.val && m.val.length);
-    const ar = views.map(([, v]) => v.a).find(x => x.ok && x.val && x.val.length);
-    const hosts = mxr ? mxr.val.map(m => m.exchange).filter(h => h !== undefined) : [];
-    const nullMx = hosts.length === 1 && (hosts[0] === '' || hosts[0] === '.');
-    return {
-      state: 'EXISTS',
-      hasMx: hosts.length > 0 && !nullMx, nullMx, hasA: Boolean(ar),
-      mx: hosts.filter(Boolean).slice(0, 3),
-    };
-  })();
-  cache.set(domain, p);
-  return p;
-}
-
-/* `emailVerdict`, `urlVerdict`, `parseContact` and `expiryState` were defined here, byte for byte
+/* `parseContact`, `emailVerdict`, `urlVerdict` and `expiryState` were defined here, byte for byte
  * the same as the library's, and that is exactly how the survey shipped a wrong number. I fixed a
  * `mailto:`-with-a-space parse bug in stxtlib, re-ran this analyzer against the frozen scan, and
  * every figure came back identical — because this file never called the function I had fixed. The
  * copy that produces the published numbers is the copy with no test over it.
- * They are imported now. `domainFacts` stays local: it is the same DNS logic wrapped in this run's
- * resume cache, which is a different job. */
+ *
+ * So did the whole DNS layer: RESOLVERS, makeResolver, look, resolveWith, loadTlds and
+ * `domainFacts`. I first kept `domainFacts` local on the grounds that it was "the same logic
+ * wrapped in this run's resume cache" — which was simply not true. The resume cache is the `facts`
+ * Map in main(); the function was a verbatim second copy with its own memo, differing only in two
+ * human-readable `detail` strings. That is the function deciding UNREGISTERED, which is the
+ * headline of the survey, so it is the last one that should have a copy nothing compares.
+ *
+ * All of it is imported now, and parity_test.js fails if any of them is declared here again.
+ * Verified rather than assumed: with the lookup cache complete `pending` is empty, so `domainFacts`
+ * is never called and the swap cannot change anything. The re-run confirms it — every key of the
+ * output is identical to the pre-dedup analysis, and the 57 lines of stdout differ only in the
+ * output filename. (The two files are not byte-identical: correction.js and notifiable.js append
+ * their own keys to the earlier one after the analyzer has finished with it.) */
 
 /**
  * Wilson score interval for a proportion, now in stats.js so it can be tested on its own. It was

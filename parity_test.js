@@ -44,10 +44,18 @@
 const fs = require('fs');
 const lib = require('./stxtlib.js');
 
-// These four must NOT exist a second time. The analyzer defined all of them privately until the
+// None of these may exist a second time. The analyzer defined all of them privately until the
 // space-after-`mailto:` fix landed in the library and changed nothing, because the analyzer was
 // never calling the library. Now it imports them, and this list is what keeps that true.
-const DEDUPED = ['parseContact', 'emailVerdict', 'urlVerdict', 'expiryState'];
+// `domainFacts` and the DNS layer under it are here for the same reason and one more: that is the
+// function that decides UNREGISTERED, so a silent copy of it is a silent copy of the headline.
+const DEDUPED = ['parseContact', 'emailVerdict', 'urlVerdict', 'expiryState',
+  'domainFacts', 'resolveWith', 'loadTlds', 'makeResolver'];
+// Of those, the ones the analyzer actually calls, so they must appear in its import list and not
+// merely somewhere in the file. The first version of this check looked for the name anywhere in
+// the source and passed on the comment block that NAMES the deleted functions — a test satisfied
+// by prose about the fix rather than by the fix.
+const DEDUPED_IMPORTED = ['parseContact', 'emailVerdict', 'urlVerdict', 'expiryState', 'domainFacts'];
 // The scanner has its own copies too, and these are the ones that matter most: `is_security_txt`
 // comes from the scanner's private `looksReal`, which is the numerator of every adoption figure
 // the survey publishes. If it drifts from the library, the headline count and `stxtcheck.js`
@@ -83,18 +91,21 @@ function loadCopies(file, names) {
  * restructured in some way this test no longer understands, and passing silently would be worse
  * than failing loudly.
  */
-function assertImportsNotCopies(file, names) {
+function assertImportsNotCopies(file, names, imported) {
   const src = fs.readFileSync(require.resolve(file), 'utf8');
-  const redefined = names.filter(n => new RegExp(`^function ${n}\\(`, 'm').test(src));
+  const redefined = names.filter(n => new RegExp(`^(?:async )?function ${n}\\(`, 'm').test(src));
   if (redefined.length) {
-    return [`${file} defines its own ${redefined.join(', ')} again — the analyzer must import `
+    return [`${file} defines its own ${redefined.join(', ')} again — it must import `
       + `these from stxtlib.js. Two copies is how the mailto-space fix silently missed.`];
   }
-  if (!/require\(['"]\.\/stxtlib(?:\.js)?['"]\)/.test(src)) {
-    return [`${file} does not require stxtlib.js — where is it getting ${names.join(', ')}?`];
-  }
-  const missing = names.filter(n => !new RegExp(`\\b${n}\\b`).test(src));
-  if (missing.length) return [`${file} no longer references ${missing.join(', ')} at all`];
+  // Read the destructuring off the require itself. Anywhere-in-the-file is not good enough: the
+  // deleted functions are named in a comment, which would satisfy a looser check forever.
+  const m = src.match(/const\s*{([^}]*)}\s*=\s*require\(['"]\.\/stxtlib(?:\.js)?['"]\)/);
+  if (!m) return [`${file} does not destructure anything from stxtlib.js — where is it getting `
+    + `${imported.join(', ')}?`];
+  const got = new Set(m[1].split(',').map(s => s.trim().split(':')[0].trim()).filter(Boolean));
+  const missing = imported.filter(n => !got.has(n));
+  if (missing.length) return [`${file} does not import ${missing.join(', ')} from stxtlib.js`];
   return [];
 }
 
@@ -215,7 +226,7 @@ async function main() {
 
   // The guard that replaced the diff. Reported through the same counter as everything else, so a
   // reintroduced copy fails the suite rather than printing a warning nobody reads.
-  for (const msg of assertImportsNotCopies('./analyze_securitytxt.js', DEDUPED)) {
+  for (const msg of assertImportsNotCopies('./analyze_securitytxt.js', DEDUPED, DEDUPED_IMPORTED)) {
     console.log(`dedup DIFF  ${msg}`); diff++;
   }
 
