@@ -494,6 +494,7 @@ node concentration_test.js   # concentration arithmetic vs hand-computed answers
 node apexfold_test.js        # two probes of one site fold into one row
 node mkwwwlist_test.js       # the second pass gets exactly the domains the first could not see
 node wilson_test.js          # the confidence intervals, against closed forms derived by hand
+node exit_codes_test.js      # the exit codes this README documents, driven from row fixtures
 ```
 
 Both exist because the numbers they cover get published, and both were verified by reading the
@@ -520,6 +521,20 @@ to keep. The test pins the count *and* the identities, since two entries can be 
 of the wrong domains. Removing the case-insensitive flag from the already-`www` guard, treating
 any failure as ENOTFOUND, dropping the dedup, and dropping the guard entirely were all injected;
 all four die, the last one by emitting `www.www.…`, a host nobody publishes.
+
+`exit_codes_test.js` covers the part of this project most likely to be depended on and least likely
+to be looked at. The exit codes are documented above as something to script against, and an exit
+code is the one output a human never reads — you run the tool, you read the printout, and the
+number goes to a shell that isn't there. Wrong codes stay invisible until someone puts them in CI.
+The logic had already shipped wrong once, in the flattering direction: a site whose only contact
+was a portal that timed out printed `NO-WORKING-CONTACT` and then exited 0, "all contacts
+reachable", because a timeout is not `page_gone` and so fell into neither the broken list nor the
+working one — and the ternary read the empty broken list as good news. The triage now lives in
+`stxtlib.js` as one function driven from invented RFC 2606 fixtures, rather than needing a real
+site in each of five states, since sites in those states are hard to find and change underneath
+you. Nine mutants, all dead: dropping the `noWorking` gate, renumbering the hijackable code,
+moving staleness above hijackable and above broken, counting `RESOLVES` as working without a live
+portal, counting a `tel:` in the denominator, and inverting the `page_gone` test.
 
 Each passed on the first run, which is not evidence. So mutations were injected to see whether
 they can fail at all, and several escaped: three needed new test bodies before the parity test

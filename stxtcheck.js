@@ -23,6 +23,7 @@
 'use strict';
 const {
   parseContact, expiryState, domainFacts, emailVerdict, urlVerdict, probePortal, fetchSecurityTxt,
+  triage,
 } = require('./stxtlib');
 const { publicSuffixOf } = require('./psl');
 
@@ -114,25 +115,16 @@ async function main() {
       : (fh && hosts.includes(fh)) ? 'host_match_path_differs' : 'MISMATCH';
   } else out.canonical = 'absent';
 
-  const hijack = rows.filter(r => r.verdict === 'UNREGISTERED');
-  const broken = rows.filter(r => ['NULL-MX', 'NO-MAIL', 'NO-ADDRESS', 'DEAD-SUBDOMAIN', 'INVALID-TLD'].includes(r.verdict)
-    || (r.portal && r.portal.why === 'page_gone'));
-  const working = rows.filter(r => ['LIVE-MX', 'IMPLICIT-A'].includes(r.verdict)
-    || (r.verdict === 'RESOLVES' && r.portal && r.portal.reachable));
-  // A tel: contact is a real RFC 9116 contact that this tool cannot verify — no domain to
-  // resolve, and nobody is dialling it from here. It must not count as a working contact and
-  // must not count as a broken one either, so it is excluded from the denominator entirely.
-  const verifiable = rows.filter(r => r.contact_domain);
-  const noWorking = verifiable.length > 0 && working.length === 0;
+  // Verdict, result string and exit code all come from stxtlib.triage — see the contract note
+  // there. Kept in the library rather than here so exit_codes_test.js can drive all five outcomes
+  // from row fixtures instead of needing a real domain in each state.
+  const verdict = triage(rows, exp);
+  const { hijack, broken, working } = verdict;
 
   out.hijackable = hijack.length;
   out.broken = broken.length;
   out.working = working.length;
-  out.result = hijack.length ? 'HIJACKABLE-CONTACT'
-    : noWorking ? 'NO-WORKING-CONTACT'
-    : !verifiable.length ? 'UNVERIFIABLE-CONTACT'
-    : broken.length ? 'PARTIALLY-BROKEN'
-    : (exp === 'expired' || exp === 'missing') ? 'STALE' : 'OK';
+  out.result = verdict.result;
 
   if (JSON_OUT) { console.log(JSON.stringify(out, null, 1)); }
   else {
@@ -167,13 +159,7 @@ async function main() {
     console.log('');
   }
 
-  // `noWorking` has to gate exit 3 alongside `broken`, or the documented meaning of exit 0 is
-  // false. A portal that times out is not `page_gone`, so it lands in neither list: without this
-  // clause a site whose only contact never answered would print NO-WORKING-CONTACT and exit 0,
-  // "all contacts reachable". The error ran in the direction that makes the tool look reassuring.
-  process.exit(hijack.length ? 2
-    : (broken.length || noWorking) ? 3
-    : (exp === 'expired' || exp === 'missing') ? 4 : 0);
+  process.exit(verdict.exit);
 }
 
 main().catch(e => { console.error('error:', e.message); process.exit(1); });

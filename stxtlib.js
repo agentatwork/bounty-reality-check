@@ -214,7 +214,60 @@ async function fetchSecurityTxt(domain, timeoutMs = 10000) {
   }
 }
 
+/**
+ * The published contract: given the per-contact verdicts and the expiry state, what does the tool
+ * conclude and what does it exit with?
+ *
+ * This lives here, and not inline in stxtcheck.js, because the exit codes are documented in the
+ * writeup as something readers will script against — `if it exits 2, fix that today` — and an
+ * exit code is the one output nobody eyeballs. It was inline, which meant the only way to exercise
+ * it was to find a real domain in each of five states.
+ *
+ * It has already been wrong once, in the direction that flatters the tool. `noWorking` did not
+ * gate exit 3, so a site whose only contact was a portal that timed out printed NO-WORKING-CONTACT
+ * and then exited 0 — "all contacts reachable". A timeout is not `page_gone`, so that contact fell
+ * into neither `broken` nor `working` and the ternary read the empty broken list as good news. Any
+ * script trusting the exit code saw a pass.
+ *
+ * The precedence is deliberate and is the part worth pinning: hijackable outranks everything,
+ * because a claimable contact domain is the one failure that is silently exploitable rather than
+ * merely inconvenient, and it stays the verdict even when the file is also expired and other
+ * contacts are also broken. Staleness is last because it is a claim about maintenance, not a
+ * broken channel.
+ *
+ * A `tel:` contact is excluded from the denominator entirely rather than counted either way. It is
+ * a real RFC 9116 contact that this tool cannot verify — there is no domain to resolve and nobody
+ * is dialling it from here. Counting it as working would let an unverifiable contact certify a
+ * site as reachable; counting it as broken would report a fault that was never observed.
+ */
+const BROKEN_VERDICTS = ['NULL-MX', 'NO-MAIL', 'NO-ADDRESS', 'DEAD-SUBDOMAIN', 'INVALID-TLD'];
+const WORKING_VERDICTS = ['LIVE-MX', 'IMPLICIT-A'];
+
+function triage(rows, expiry) {
+  const hijack = rows.filter(r => r.verdict === 'UNREGISTERED');
+  const broken = rows.filter(r => BROKEN_VERDICTS.includes(r.verdict)
+    || (r.portal && r.portal.why === 'page_gone'));
+  const working = rows.filter(r => WORKING_VERDICTS.includes(r.verdict)
+    || (r.verdict === 'RESOLVES' && r.portal && r.portal.reachable));
+  const verifiable = rows.filter(r => r.contact_domain);
+  const noWorking = verifiable.length > 0 && working.length === 0;
+  const stale = expiry === 'expired' || expiry === 'missing';
+
+  const result = hijack.length ? 'HIJACKABLE-CONTACT'
+    : noWorking ? 'NO-WORKING-CONTACT'
+    : !verifiable.length ? 'UNVERIFIABLE-CONTACT'
+    : broken.length ? 'PARTIALLY-BROKEN'
+    : stale ? 'STALE' : 'OK';
+
+  const exit = hijack.length ? 2
+    : (broken.length || noWorking) ? 3
+    : stale ? 4 : 0;
+
+  return { hijack, broken, working, verifiable, noWorking, result, exit };
+}
+
 module.exports = {
   UA, RESOLVERS, parseSecurityTxt, looksReal, parseContact, expiryState,
   domainFacts, emailVerdict, urlVerdict, probePortal, fetchSecurityTxt, resolveWith, loadTlds,
+  triage, BROKEN_VERDICTS, WORKING_VERDICTS,
 };
