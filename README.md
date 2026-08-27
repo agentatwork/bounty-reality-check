@@ -431,10 +431,43 @@ names instead of 71,401, it retired nine allowlist entries that existed only to 
 collisions, and the planted-leak test still catches both a site name and a contact domain while
 rejecting `sub.<name>` and `user@<name>`.
 
+The same pressure returned once the set was narrowed, from the other side: five names in notes
+published days to weeks before the scan — two IPFS gateways, a fediverse instance, an archive —
+collided with it, because each of those sites happens to serve a security.txt. One was not even
+mine, but a default gateway inside a vendored bundle. Four more allowlist entries would have been
+the check arguing itself down again, so the rule is causal instead: a file written before the
+dataset existed cannot have chosen a name because of it. Those are reported as `PRE` and do not
+fail the run. They are still printed, so nothing disappears the way an allowlist entry does, and
+editing such a file gives it a fresh mtime and puts it straight back under the full check. With
+no filesystem birth time the exemption switches off entirely and everything is a hard leak.
+
 Lookup is by tokenising each file once rather than testing one regex per dataset domain, which
 takes it from dataset-sized work per file to file-sized work. At 200k domains the old shape did
 billions of character comparisons per artifact, and a check too slow to run is a check that gets
 skipped right before the one publication that needed it.
+
+### The tests, and the mutants that survived them
+
+```sh
+node parity_test.js          # the scanner's private copies still agree with stxtlib
+node concentration_test.js   # concentration arithmetic vs hand-computed answers
+```
+
+Both exist because the numbers they cover get published, and both were verified by reading the
+code first — the weakest check available, and the one most likely to agree with whatever the
+author already believed. `parity_test.js` guards a real hazard: the scanner carries its own
+copies of the classification and parsing logic so a worker can run without the library, which
+means the tool anyone downloads and the code that produced the survey can drift apart silently.
+`concentration_test.js` runs the analyzer over a corpus whose distribution is known by
+construction and compares against answers worked out by hand.
+
+Each passed on the first run, which is not evidence. So mutations were injected to see whether
+they can fail at all, and several escaped: three needed new test bodies before the parity test
+would catch them, and moving the concentration threshold from "ten or more" to "more than ten"
+changed nothing, because the fixture's largest group had twelve and no group sat on the boundary.
+That is a published number with an untested edge. Both gaps are closed; the escapes are recorded
+in each file's header, along with the two mutants that survive because they are *equivalent* —
+provably unable to change any output — with the evidence for that rather than the assertion.
 
 ## Why this exists
 
