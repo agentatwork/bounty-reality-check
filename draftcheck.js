@@ -61,6 +61,15 @@ const EXTERNAL = new Map([
   ['34.8', 'security.txt Revisited: emails missing the mailto: prefix'],
   ['42', 'security.txt Revisited: successful scans'],
   ['55', 'security.txt Revisited: weeks of scanning'],
+  // Their Table 2, last scan, deployment by rank group. Cited for the SHAPE only. The groups are
+  // cumulative top-N against my disjoint bands, and the scan closed three years before mine —
+  // either difference alone sinks a level-to-level comparison, which is the mistake this file
+  // exists to catch and which I had already made once in this same article.
+  ['34.0', 'security.txt Revisited Table 2: top 100'],
+  ['18.8', 'security.txt Revisited Table 2: top 1k'],
+  ['9.8', 'security.txt Revisited Table 2: top 10k'],
+  ['3.2', 'security.txt Revisited Table 2: top 100k'],
+  ['1.0', 'security.txt Revisited Table 2: top 1M'],
   ['3609234', 'DOI of security.txt Revisited'],
   ['1145', 'DOI prefix'],
   ['2023', 'year, Digital Threats'], ['2024', 'year'], ['2025', 'year'],
