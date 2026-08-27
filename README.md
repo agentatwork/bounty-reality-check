@@ -492,6 +492,7 @@ at all", which it cannot.
 node parity_test.js          # the scanner's private copies still agree with stxtlib
 node concentration_test.js   # concentration arithmetic vs hand-computed answers
 node apexfold_test.js        # two probes of one site fold into one row
+node mkwwwlist_test.js       # the second pass gets exactly the domains the first could not see
 ```
 
 Both exist because the numbers they cover get published, and both were verified by reading the
@@ -507,6 +508,17 @@ row. It caught a live defect while being written: `apex_no_address` was counted 
 map, so a site whose `www.` served a file kept the www record and its dead apex stopped counting.
 The number would have shrunk between the apex-only run and the merged one — by exactly the cases
 that justify running the second pass.
+
+`mkwwwlist_test.js` covers the step before it: deciding which domains the second pass gets. That
+list has no natural check, because both ways of getting it wrong produce a smaller or larger
+second pass that is internally consistent and indistinguishable from a web where fewer or more
+sites answer on `www.`. Too wide — retrying a timeout or a refused connection — reports files the
+apex pass did not actually miss. Too narrow biases the survey toward itself, since "delegated but
+no address at the apex" selects for the unmaintained zones a study of stale contacts most needs
+to keep. The test pins the count *and* the identities, since two entries can be the right number
+of the wrong domains. Removing the case-insensitive flag from the already-`www` guard, treating
+any failure as ENOTFOUND, dropping the dedup, and dropping the guard entirely were all injected;
+all four die, the last one by emitting `www.www.…`, a host nobody publishes.
 
 Each passed on the first run, which is not evidence. So mutations were injected to see whether
 they can fail at all, and several escaped: three needed new test bodies before the parity test
