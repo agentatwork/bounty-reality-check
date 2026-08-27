@@ -169,6 +169,29 @@ function classify(doc) {
     /(reward|payout).{0,20}\$\s?\d[\d,]{2,}/, /per (bug|finding|vulnerability).{0,20}\$?\d/,
   ]);
 
+  // Guard (the quay false-positive): a $ amount that is an AUDIT-COST estimate
+  // ("$25-50k, OtterSec/MoveBit/Zellic, 4-6 weeks lead") or a PLANNED / not-yet-open
+  // bounty pool ("No bug bounty until post-mainnet", "$10k starter pool planned") is
+  // NOT a committed reporter reward — it is spend, or a promise for later. Suppress a
+  // committed hit whose ONLY money-anchor sits in that context.
+  const committedFalseCtx = scan(t, [
+    /no bug bounty (until|before|post|after)/, /starter pool/,
+    /bount(y|ies)[^.\n]{0,50}(planned|coming soon|will launch|to be launched|post[- ]mainnet|after mainnet)/,
+    /(planned|future|upcoming|targeted)[^.\n]{0,30}(immunefi|bounty|program|pool)/,
+    /\$\s?\d[\d,]*k?\s*(to|-|–)\s*\$?\d[\d,]*k?[^.\n]{0,45}(audit|ottersec|movebit|zellic|trail of bits|certik|hacken|weeks?\s*lead)/,
+    /(audit|ottersec|movebit|zellic|trail of bits|certik|hacken)[^.\n]{0,45}\$\s?\d/,
+  ]);
+  // A reward-NOW anchor (money tied to paying a reporter for a finding) beats the guard.
+  const findingAnchored = scan(t, [
+    /paid in (usdc|usdt|dai|xlm|eth|usd)/, /will be paid/,
+    /(reward|payout|bounty)s?[^.\n]{0,25}(is|of|up to|:)?\s*\$?\s?\d[\d,]{2,}/,
+    /per (bug|finding|vulnerability|report)[^.\n]{0,20}\$?\d/,
+    /\|\s*critical\s*\|[^\n|]*(\$|usdc|usdt|dai|\d{4,})/i,
+  ]);
+  const committedEff = (committed.hit && committedFalseCtx.hit && !findingAnchored.hit)
+    ? { hit: false, evidence: committed.evidence, suppressedBy: committedFalseCtx.evidence[0] || 'audit-cost/planned-pool' }
+    : committed;
+
   // Program-access gate: an invitation-only / not-yet-open program does not reward an
   // uninvited reporter, even when PVR is technically on (the aethelred lesson).
   const invitationOnly = scan(t, [
@@ -200,7 +223,7 @@ function classify(doc) {
   const hardWalledMail = emailChannel.some(e => /@(gmail|googlemail)\.com$/.test(e));
   const pvrLinkInDoc = /security\/advisories\/new/i.test(t) || /private vulnerability reporting/i.test(t);
 
-  return { discretionary, strongDiscretionary, weakDiscretionary, committed, invitationOnly, deferred, kyc, emailChannel: [...new Set(emailChannel)].slice(0, 3), hardWalledMail, pvrLinkInDoc };
+  return { discretionary, strongDiscretionary, weakDiscretionary, committed: committedEff, invitationOnly, deferred, kyc, emailChannel: [...new Set(emailChannel)].slice(0, 3), hardWalledMail, pvrLinkInDoc };
 }
 
 function verdict({ pvr, doc, c }) {
