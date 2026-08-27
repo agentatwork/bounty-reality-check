@@ -12,7 +12,7 @@
  *
  * Exit codes:
  *   0  all contacts reachable
- *   1  no security.txt, or it does not parse
+ *   1  could not check: no file, or the name does not resolve, or the host did not answer
  *   2  a contact domain is UNREGISTERED — anyone can claim it and collect your reports
  *   3  a contact is broken but not claimable (dead subdomain, null MX, portal gone), or
  *      nothing verifiable answered at all
@@ -64,10 +64,10 @@ async function main() {
     // configuration gap. Someone who mistypes their domain deserves to be told they mistyped it,
     // not advised to publish a file at an address that does not exist.
     //
-    // All three still exit 1. The article documents 1 as "no file or it doesn't parse", and
-    // "I could not verify you" is honestly the same outcome to a script; splitting the exit codes
-    // would break a contract readers are told to rely on in order to say something the message
-    // already says.
+    // All three still exit 1: "I could not verify you" is one outcome to a script, and splitting
+    // the codes would say in the exit status what the message already says in words. The README
+    // and the article both document 1 as "couldn't check" and enumerate the three — keep those
+    // three descriptions in step if this branch ever changes again.
     const DNS_ERRS = new Set(['ENOTFOUND', 'ENODATA', 'EAI_AGAIN']);
     const kind = !res.err ? 'no-file' : DNS_ERRS.has(res.err) ? 'no-dns' : 'unreachable';
     out.result = { 'no-file': 'NO-FILE', 'no-dns': 'NO-DNS', 'unreachable': 'UNREACHABLE' }[kind];
