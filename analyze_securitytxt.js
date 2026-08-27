@@ -247,9 +247,26 @@ async function main() {
   // found a conforming file, which keeps the denominator comparable to published per-domain
   // adoption figures. A hit always beats a miss regardless of which pass produced it.
   const byApex = new Map();
+  // Counted over RECORDS, not over the collapsed map: the second pass is judged by what its own
+  // probes did, and a www record that loses the tie-break below still happened. Both are sets of
+  // apexes rather than counters because a domain must not be double-counted if it is retried
+  // twice across a supervisor restart.
+  const wwwTried = new Set(), wwwLive = new Set();
+  // Also counted over records: "the apex has no address" is a fact about the apex probe, and it
+  // must not change meaning when a second pass runs. Counting it over the COLLAPSED map made it
+  // drift — a domain whose www served a file keeps the www record, so its dead apex stopped
+  // being counted and the apex-less total silently shrank by exactly the interesting cases.
+  const apexNoAddr = new Set();
   for (const l of lines) {
     let r; try { r = JSON.parse(l); } catch { continue; }
     const key = apexOf(r.domain);
+    if (r.domain === key && r.err === 'ENOTFOUND') apexNoAddr.add(key);
+    if (r.domain !== key) {
+      wwwTried.add(key);
+      // "Live" means the www host answered over HTTP at all. A 404 counts: the question here is
+      // whether a host exists to serve a file, not whether it serves this particular one.
+      if (!r.err) wwwLive.add(key);
+    }
     const prev = byApex.get(key);
     // A hit beats a miss; if both passes found a file the apex one wins. Spelled out rather than
     // left to line order, so the result does not depend on which file was concatenated first.
@@ -270,12 +287,11 @@ async function main() {
   // Tracked per bucket because a survey that counts status codes instead of parsing the body
   // reports these as adoption, and the size of that error is not constant across the ranking.
   const soft200ByBucket = {};
-  let viaWww = 0, apexNoAddress = 0;
+  let viaWww = 0;
   for (const r of byApex.values()) {
     const b = bucketOf(ranks.get(r._apex));
     scannedByBucket[b] = (scannedByBucket[b] || 0) + 1;
     if (r.ok && !r.is_security_txt) soft200ByBucket[b] = (soft200ByBucket[b] || 0) + 1;
-    if (r.err === 'ENOTFOUND') apexNoAddress++;
     if (r.is_security_txt) {
       r._rank = ranks.get(r._apex) || null; r._bucket = b;
       files.push(r); foundByBucket[b] = (foundByBucket[b] || 0) + 1;
@@ -400,7 +416,18 @@ async function main() {
     // `scanned` is DISTINCT SITES, not fetches: the www second pass probes some domains twice
     // and both numbers are reported so a reader can never mistake one for the other.
     generated_from: inPath, scanned: byApex.size, fetch_records: lines.length,
-    security_txt: files.length, found_only_via_www: viaWww, apex_no_address: apexNoAddress,
+    security_txt: files.length, found_only_via_www: viaWww, apex_no_address: apexNoAddr.size,
+    // The www second pass, scored on its own terms. Recorded here rather than read off the scan
+    // log, because a number carried by hand from a terminal into prose is outside every check
+    // that exists to catch a number carried wrong.
+    www_pass: {
+      domains_retried: wwwTried.size,
+      www_host_responded: wwwLive.size,
+      // null, not 0, when the pass has not run: a rate over an empty denominator is not zero,
+      // and "0.0% of apex-less domains serve a live www" is a false claim rather than a missing one.
+      pct_www_alive: wwwTried.size ? +(100 * wwwLive.size / wwwTried.size).toFixed(1) : null,
+      security_txt_found_only_via_www: viaWww,
+    },
     distinct_contact_domains: domains.length, distinct_portal_urls: urlSet.size,
     sites: [],
   };

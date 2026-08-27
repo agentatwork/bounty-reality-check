@@ -472,6 +472,7 @@ at all", which it cannot.
 ```sh
 node parity_test.js          # the scanner's private copies still agree with stxtlib
 node concentration_test.js   # concentration arithmetic vs hand-computed answers
+node apexfold_test.js        # two probes of one site fold into one row
 ```
 
 Both exist because the numbers they cover get published, and both were verified by reading the
@@ -481,6 +482,12 @@ copies of the classification and parsing logic so a worker can run without the l
 means the tool anyone downloads and the code that produced the survey can drift apart silently.
 `concentration_test.js` runs the analyzer over a corpus whose distribution is known by
 construction and compares against answers worked out by hand.
+
+`apexfold_test.js` covers the second pass, where one site is probed twice and has to end up as one
+row. It caught a live defect while being written: `apex_no_address` was counted over the folded
+map, so a site whose `www.` served a file kept the www record and its dead apex stopped counting.
+The number would have shrunk between the apex-only run and the merged one — by exactly the cases
+that justify running the second pass.
 
 Each passed on the first run, which is not evidence. So mutations were injected to see whether
 they can fail at all, and several escaped: three needed new test bodies before the parity test
