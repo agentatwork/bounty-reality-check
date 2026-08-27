@@ -647,18 +647,60 @@ async function main() {
   // The rank table is the point of the whole 200k run: is a lapsed contact a tail phenomenon,
   // or does it happen at every level of the list? Rates, not counts — the buckets differ in
   // size by two orders of magnitude and raw counts would say nothing.
+  // These rates used to be computed inside the print loop and stored nowhere, which is the same
+  // mistake as writing the JSON before the intervals were added — a number that exists only in a
+  // terminal. It bites differently here. The article pastes this table verbatim, and the gate
+  // that checks every printed number against the analysis would have flagged every cell in it as
+  // unsourced. The obvious repair at that point is to add forty numbers to the gate's exception
+  // list, which turns off checking precisely where the numbers are densest. So the table is now
+  // rendered FROM the stored rates: it cannot disagree with the file, and pasting it passes.
+  out.bucket_rates = {};
+  for (const [name] of [...BUCKETS, ['unranked']]) {
+    const a = out.adoption_by_bucket[name];
+    if (!a) continue;
+    const b = (out.by_bucket && out.by_bucket[name]) || {};
+    const n = a.security_txt;
+    // null rather than 0 when no site in the bucket published a file: "0.0% of them are expired"
+    // is a claim about a population that does not exist here.
+    const pc = (x) => (n ? +(100 * (x || 0) / n).toFixed(1) : null);
+    out.bucket_rates[name] = {
+      sites_with_file: n,
+      expired_pct: pc(b.expiry_expired),
+      no_expires_pct: pc(b.expiry_missing),
+      third_party_pct: pc(b.has_third_party_contact),
+      no_working_contact_pct: pc(b.no_working_contact),
+      hijackable_sites: b.hijackable_site || 0,
+    };
+  }
+
+  // The same rates pooled over the whole run, because the prose quotes them as single figures and
+  // a percentage recomputed by hand at writing time is how one operating point gets mixed with
+  // another. Denominator throughout: sites that published a parseable file, not sites scanned.
+  {
+    const n = out.security_txt;
+    const tot = (k) => Object.values(out.by_bucket || {}).reduce((s, b) => s + (b[k] || 0), 0);
+    const pc = (x) => (n ? +(100 * x / n).toFixed(1) : null);
+    out.overall_rates = {
+      sites_with_file: n,
+      expired_pct: pc(tot('expiry_expired')),
+      no_expires_pct: pc(tot('expiry_missing')),
+      third_party_pct: pc(tot('has_third_party_contact')),
+      no_working_contact_pct: pc(tot('no_working_contact')),
+      hijackable_sites: tot('hijackable_site'),
+    };
+  }
+
   console.log('\n--- by popularity bucket (rates over sites WITH a security.txt) ---');
   console.log('bucket        scanned  sec.txt  adopt%   expired%  noExpires%  3rdParty%  noContact%  hijack');
   for (const [name] of [...BUCKETS, ['unranked']]) {
     const a = out.adoption_by_bucket[name];
     if (!a) continue;
-    const b = (out.by_bucket && out.by_bucket[name]) || {};
-    const n = a.security_txt || 1;
-    const pc = (x) => (100 * (x || 0) / n).toFixed(1).padStart(6);
+    const r = out.bucket_rates[name];
+    const pc = (x) => (x === null ? '   n/a' : x.toFixed(1).padStart(6));
     console.log(
       `${name.padEnd(12)} ${String(a.scanned).padStart(7)} ${String(a.security_txt).padStart(8)} ` +
-      `${a.pct.toFixed(2).padStart(6)} ${pc(b.expiry_expired)}    ${pc(b.expiry_missing)}     ` +
-      `${pc(b.has_third_party_contact)}    ${pc(b.no_working_contact)}      ${String(b.hijackable_site || 0).padStart(5)}`
+      `${a.pct.toFixed(2).padStart(6)} ${pc(r.expired_pct)}    ${pc(r.no_expires_pct)}     ` +
+      `${pc(r.third_party_pct)}    ${pc(r.no_working_contact_pct)}      ${String(r.hijackable_sites).padStart(5)}`
     );
   }
   // Write LAST, not in the middle. It used to be written right after the per-site pass, which

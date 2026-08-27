@@ -62,6 +62,9 @@ const EXTERNAL = new Map([
   // Rank-bucket boundaries. These are the shape of the analysis, not results from it: they are
   // chosen before the scan and would be the same numbers if every fetch had failed.
   ['1000', 'rank bucket boundary'], ['100000', 'rank bucket boundary'],
+  // The same boundaries as they appear in the rank table's row LABELS — `10k-50k`, `50k-100k`,
+  // `100k-200k` — where the digits are part of a bucket name rather than a measurement.
+  ['50', 'rank bucket boundary, thousands'], ['100', 'rank bucket boundary, thousands'],
   ['95', 'confidence level of the Wilson interval'],
   // Exit codes of the tool the article ships.
   ['0', 'stxtcheck exit code'], ['1', 'stxtcheck exit code'], ['2', 'stxtcheck exit code'],
