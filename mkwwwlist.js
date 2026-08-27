@@ -7,9 +7,20 @@
  * WHY THIS EXISTS. The apex scan fetches `https://<domain>/.well-known/security.txt`. When the
  * apex has no A/AAAA record that fetch fails with ENOTFOUND and the domain is recorded as
  * unreachable — but 28.0% of those domains (95% CI 23.2–33.3%, n=300 sampled from the list and
- * resolved independently) serve a `www.` host with an address. RFC 9116 §3
- * places the file at the top level of the domain the service runs on, so for a site that only
- * answers on `www.` that IS the conforming location, and the apex scan never looked at it.
+ * resolved independently) serve a `www.` host with an address. For a site that only answers on
+ * `www.`, that host is where its website is, and the apex scan never looked at it.
+ *
+ * THE SPEC DOES NOT AUTHORISE THIS, and an earlier version of this comment claimed it did —
+ * "RFC 9116 §3 places the file at the top level of the domain the service runs on, so for a
+ * site that only answers on `www.` that IS the conforming location." Half true, and the wrong
+ * half is load-bearing. §3 does make `https://www.example.com/.well-known/security.txt` a
+ * conforming location *for `www.example.com`*. But §3.1: a file "MUST only apply to the domain
+ * or IP address in the URI used to retrieve it, not to any of its subdomains or parent domains."
+ * So a file found here says nothing, per the RFC, about the apex domain in the ranking list.
+ * Attributing it to the apex is MY judgement — the ranked entry is a label for an organisation
+ * and this is that organisation's site — not something the standard backs. That is exactly why
+ * the results go to a separate output file (see the last paragraph): the merge is a choice the
+ * analysis makes visibly, and a strict §3.1 reading can decline it and still use the data.
  *
  * The reason to fix it is bias, not sample size. "Registered and delegated, but no address at the
  * apex" is not a random slice of the web — it selects for older DNS setups and for organisations

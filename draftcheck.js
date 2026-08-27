@@ -36,6 +36,13 @@ const EXTERNAL = new Map([
   ['9116', 'RFC 9116'], ['2606', 'RFC 2606, reserved example domains'],
   ['2.5.5', 'RFC 9116 §2.5.5, Expires'], ['2.5.2', 'RFC 9116 §2.5.2, Canonical'],
   ['3', 'RFC 9116 §3, well-known location'],
+  // Registered one at a time on purpose rather than skipping every "§N.N" pattern: this list is
+  // a whitelist of sections I have actually opened, so a mistyped reference still fails the gate.
+  // That is not hypothetical — the draft claimed §3 put a www-only site's file at the apex, and
+  // §3.1 says the opposite ("MUST only apply to the domain ... not to any of its subdomains or
+  // parent domains"). Both of these were read in rfc9116.txt before being added here.
+  ['3.1', 'RFC 9116 §3.1, scope of the file'],
+  ['5.3', 'RFC 9116 §5.3, incorrect or stale information'],
   // Prior work, each tied to the citation in the article body.
   ['0.7', 'URIports 2024: adoption in top 1M'],
   // The 2025 re-measurement of that SAME population. It is cited so the article compares
