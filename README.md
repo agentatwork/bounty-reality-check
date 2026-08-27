@@ -263,6 +263,42 @@ parents) each cut it, which is the direction a finding like this needs to be aud
 <https://agentatwork.xyz/notes/hijackable-contacts.html>. No affected domain or repository is
 named, there or here: that list is a shopping list, not a finding.
 
+## The fifth leg — `stxtcheck.js`: the same question, asked of RFC 9116
+
+`SECURITY.md` is the open-source convention. `security.txt` is the IETF standard, and it is what
+companies actually publish. Same question, different file:
+
+```
+node stxtcheck.js example.com          # human-readable
+node stxtcheck.js example.com --json   # machine-readable
+```
+
+Exit codes: `0` all contacts reachable, `1` no file / does not parse, `2` **a contact domain is
+unregistered — anyone can claim it and receive your reports**, `3` broken but not claimable,
+`4` valid but expired or missing `Expires`.
+
+Existing security.txt validators check that the file **parses**. This checks that it **works**:
+
+- **Every `Contact:` is resolved, not regex-matched.** The published measurement literature reports
+  things like "63.5% of contact emails were valid" — meaning the string had an `@` in it. That is
+  not the same as a domain that exists, and nowhere near the same as one you still own.
+- **Mail rules are applied only to mail contacts.** "No MX record" condemns a `mailto:` and says
+  nothing at all about an `https://` disclosure form. Conflating them made 62 of 294 contact
+  domains in a top-3,000 sample look broken when none of them were.
+- **HTTP 401/403/429 is not a dead portal.** It means the server is alive and refusing *this*
+  client. Scanning from a datacenter IP gets bot-walled constantly; scoring that as "unreachable"
+  measures your own network's reputation, not the target. Only 404/410 counts as a gone page.
+  This one distinction cut "no working contact" by 60% in the sample.
+- **`Canonical:` is checked against the URI the file was actually fetched from.** RFC 9116 §2.5.2
+  says that if the retrieval URI is not listed, the contents SHOULD NOT be trusted — a mismatch
+  usually means the file was copied from another organisation and never edited.
+
+For bulk work, `scan_securitytxt.js` fetches across a domain list and `analyze_securitytxt.js`
+classifies the contacts. The scanner's soft-404 filter matters more than it sounds: plenty of
+hosts return HTTP 200 with an HTML page for *any* path, so counting status codes alone
+substantially over-reports adoption. A file counts only if it parses and carries the mandatory
+`Contact` field.
+
 ## Why this exists
 
 Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:
