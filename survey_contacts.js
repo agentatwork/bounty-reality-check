@@ -62,6 +62,12 @@ async function fetchDoc(repo) {
 }
 
 function extractEmail(text) {
+  // Strip HTML comments FIRST. An address inside <!-- --> is invisible in rendered Markdown,
+  // so it is not a published contact and must not be treated as one. Measured on the affected
+  // set: 1 of 208 repos named a dead domain only inside a comment while its visible policy
+  // correctly routes to private reporting. Counting it overstated the finding by one repo --
+  // small, but an error in the direction that flatters the headline.
+  text = text.replace(/<!--[\s\S]*?-->/g, ' ');
   const bad = /\.(png|jpg|jpeg|svg|gif|webp)$/i;
   const all = [...text.matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi)]
     .map(m => ({ email: m[0].toLowerCase(), at: m.index }))
