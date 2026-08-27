@@ -43,6 +43,14 @@ const EXTERNAL = new Map([
   // parent domains"). Both of these were read in rfc9116.txt before being added here.
   ['3.1', 'RFC 9116 §3.1, scope of the file'],
   ['5.3', 'RFC 9116 §5.3, incorrect or stale information'],
+  // §1.1 cites BCP 14 with the RFC 8174 caveat: the keywords bind "when, and only when, they
+  // appear in all capitals." This matters to the article's argument, because §5.3 — the section
+  // that states the threat model — says "should ensure" in lowercase, so it is prose rather than
+  // a conformance requirement. An earlier draft called it "the one requirement in the whole
+  // document"; that borrowed the standard's authority for my thesis and was wrong.
+  ['14', 'BCP 14 (RFC 2119 / RFC 8174), keyword interpretation, cited via RFC 9116 §1.1'],
+  // Algorithm name, not a measurement. Used to say two files are byte-identical.
+  ['256', 'SHA-256, the digest named when comparing two files'],
   // Prior work, each tied to the citation in the article body.
   ['0.7', 'URIports 2024: adoption in top 1M'],
   // The 2025 re-measurement of that SAME population. It is cited so the article compares
