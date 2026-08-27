@@ -228,24 +228,52 @@ async function main() {
   const domains = [...domainSet];
   console.log(`${domains.length} distinct contact domains, ${urlSet.size} distinct portal URLs`);
 
+  // --- Lookup cache: this job is long enough to die, so it must be able to resume. ---
+  //
+  // The DNS and portal phases are tens of minutes of network on a one-core box, and the output
+  // file is not written until every one of them has finished. A death at 90% currently costs the
+  // whole run. Same fix as the scanner: append each result as it lands, load them back at
+  // startup, and skip what is already known. A restart then costs one file re-read.
+  //
+  // Cheap insurance, and this is the run that produces the published numbers -- the one where
+  // "just run it again" is most expensive and most tempting to skip.
+  // Keyed to the INPUT, not the output. The cache is a record of what the network said about a
+  // given scan, so re-running the same dataset into a different report filename must still reuse
+  // it — keying it to outPath meant a renamed report silently threw away half an hour of DNS.
+  const cachePath = `${inPath}.lookups.jsonl`;
   const facts = new Map();
+  const portal = new Map();
+  let cachedDns = 0, cachedPortal = 0;
+  if (fs.existsSync(cachePath)) {
+    for (const l of fs.readFileSync(cachePath, 'utf8').split('\n')) {
+      if (!l) continue;
+      let r; try { r = JSON.parse(l); } catch { continue; }   // a torn last line is normal after a kill
+      if (r.t === 'dns') { facts.set(r.k, r.v); cachedDns++; }
+      else if (r.t === 'portal') { portal.set(r.k, r.v); cachedPortal++; }
+    }
+    console.log(`cache: reusing ${cachedDns} dns + ${cachedPortal} portal lookups from ${cachePath}`);
+  }
+  const remember = (t, k, v) => { try { fs.appendFileSync(cachePath, `${JSON.stringify({ t, k, v })}\n`); } catch {} };
+
+  const pending = domains.filter(d => !facts.has(d));
   let i = 0, done = 0;
   const t0 = Date.now();
   await Promise.all(Array.from({ length: CONC }, async () => {
-    while (i < domains.length) {
-      const d = domains[i++];
-      facts.set(d, await domainFacts(d));
+    while (i < pending.length) {
+      const d = pending[i++];
+      const v = await domainFacts(d);
+      facts.set(d, v);
+      remember('dns', d, v);
       if (++done % 500 === 0) {
         const rate = done / ((Date.now() - t0) / 1000);
-        console.log(`  dns ${done}/${domains.length} ${rate.toFixed(1)}/s`);
+        console.log(`  dns ${done}/${pending.length} ${rate.toFixed(1)}/s`);
       }
     }
   }));
 
   // Probe the portals. A resolving host is not a working disclosure form: the domain can be
   // parked, the path can 404, the vendor can have been cancelled. Nobody has measured this.
-  const urls = [...urlSet];
-  const portal = new Map();
+  const urls = [...urlSet].filter(u => !portal.has(u));
   let j = 0, pdone = 0;
   const t1 = Date.now();
   await Promise.all(Array.from({ length: Math.min(CONC, 32) }, async () => {
@@ -254,7 +282,9 @@ async function main() {
       let host = null;
       try { host = new URL(u).hostname.toLowerCase(); } catch {}
       const f = host ? facts.get(host) : null;
-      if (f && f.state !== 'EXISTS') portal.set(u, { reachable: false, why: f.state });
+      // Derived from DNS, not from a request — cached anyway, so a resume does not re-derive it
+      // and the cache stays a complete record of what the run decided about every URL.
+      if (f && f.state !== 'EXISTS') { const v = { reachable: false, why: f.state }; portal.set(u, v); remember('portal', u, v); }
       else {
         try {
           const r = await fetch(u, {
@@ -277,14 +307,16 @@ async function main() {
           // killed the scanner at ~19k domains. This loop makes thousands of the same calls and
           // had the identical defect -- fixing it in one file did not fix it in the others.
           try { await r.body?.cancel(); } catch { /* already closed */ }
-          portal.set(u, { reachable: cls === 'ok' || cls === 'alive_gated', status: s, why: cls });
+          const v = { reachable: cls === 'ok' || cls === 'alive_gated', status: s, why: cls };
+          portal.set(u, v); remember('portal', u, v);
         } catch (e) {
           // A bare TypeError from fetch is a malformed or unsupported Contact URI, not a network
           // condition -- keep it distinct so it cannot be read as "the portal is down".
           const why = e.name === 'TimeoutError' ? 'timeout'
             : e.cause?.code ? e.cause.code
             : e.name === 'TypeError' ? 'bad_contact_uri' : (e.name || 'err');
-          portal.set(u, { reachable: false, why });
+          const v = { reachable: false, why };
+          portal.set(u, v); remember('portal', u, v);
         }
       }
       if (++pdone % 250 === 0) {
@@ -296,7 +328,7 @@ async function main() {
 
   const out = {
     generated_from: inPath, scanned: lines.length, security_txt: files.length,
-    distinct_contact_domains: domains.length, distinct_portal_urls: urls.length,
+    distinct_contact_domains: domains.length, distinct_portal_urls: urlSet.size,
     sites: [],
   };
   const bump = (k, v) => { out[k] = out[k] || {}; out[k][v] = (out[k][v] || 0) + 1; };

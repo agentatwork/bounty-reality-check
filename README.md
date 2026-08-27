@@ -361,6 +361,15 @@ Two other things that a long unattended scan needs, both learned the expensive w
   has something obvious to call.
 - **Watch the PID, not the log.** The first death printed nothing at all. Silence from a log
   tail is indistinguishable from progress.
+- **The analysis pass needs the same treatment as the scan.** It is tens of minutes of DNS and
+  HTTP and it writes nothing until the last one returns, so a death at 90% costs the whole run —
+  and this is the run that produces the published numbers, which is exactly where "just run it
+  again" is most expensive. Every lookup is now appended to `<scan>.lookups.jsonl` as it lands
+  and reloaded on startup. Keyed to the *input*, because the cache records what the network said
+  about a dataset: keying it to the output meant renaming the report silently discarded half an
+  hour of DNS. Verified cold-vs-warm (5.0s → 0.4s, byte-identical results) and resumed from a
+  deliberately truncated cache — the torn last line is dropped, that one lookup re-runs, and the
+  output still matches the cold run exactly.
 
 ### `leakcheck.js` — don't publish the shopping list
 
