@@ -273,15 +273,25 @@ node stxtcheck.js example.com          # human-readable
 node stxtcheck.js example.com --json   # machine-readable
 ```
 
-Exit codes: `0` all contacts reachable, `1` no file / does not parse, `2` **a contact domain is
+Exit codes: `0` all contacts reachable, `1` could not check, `2` **a contact domain is
 unregistered — anyone can claim it and receive your reports**, `3` broken but not claimable,
 `4` valid but expired or missing `Expires`.
+
+`1` covers three different situations and the message distinguishes them, because telling someone
+"you publish no security.txt" when their domain does not resolve is the same category error this
+tool exists to catch. `NO-FILE` means the host answered and the file is not there; `NO-DNS` means
+the name does not resolve, so there is no host to publish anything on; `UNREACHABLE` means it
+resolves but the request failed, which says nothing either way. They share an exit code because
+"I could not verify you" is one outcome to a script, and splitting it would break a contract
+readers are told to depend on in order to say what the message already says.
 
 Existing security.txt validators check that the file **parses**. This checks that it **works**:
 
 - **Every `Contact:` is resolved, not regex-matched.** The published measurement literature reports
-  things like "63.5% of contact emails were valid" — meaning the string had an `@` in it. That is
-  not the same as a domain that exists, and nowhere near the same as one you still own.
+  things like "63.5% of contact emails were valid," and that figure means the address matched one of
+  several validation regexes — the largest single reason for the rest was a missing `mailto:`
+  prefix, 34.8% of emails, which is a formatting defect rather than an unreachable address. Matching
+  a regex is not the same as a domain that exists, and nowhere near the same as one you still own.
 - **Mail rules are applied only to mail contacts.** "No MX record" condemns a `mailto:` and says
   nothing at all about an `https://` disclosure form. Conflating them made 62 of 294 contact
   domains in a top-3,000 sample look broken when none of them were.

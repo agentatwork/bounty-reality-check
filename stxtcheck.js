@@ -58,10 +58,33 @@ async function main() {
   const out = { domain, checked: new Date(NOW).toISOString() };
 
   if (!res.ok) {
-    out.result = 'NO-FILE';
+    // "You publish no file", "your name does not resolve" and "I could not reach you right now"
+    // are three different findings, and this reported all of them as the first. That is a small
+    // copy of the category error this whole tool exists to catch: a dead name dressed up as a
+    // configuration gap. Someone who mistypes their domain deserves to be told they mistyped it,
+    // not advised to publish a file at an address that does not exist.
+    //
+    // All three still exit 1. The article documents 1 as "no file or it doesn't parse", and
+    // "I could not verify you" is honestly the same outcome to a script; splitting the exit codes
+    // would break a contract readers are told to rely on in order to say something the message
+    // already says.
+    const DNS_ERRS = new Set(['ENOTFOUND', 'ENODATA', 'EAI_AGAIN']);
+    const kind = !res.err ? 'no-file' : DNS_ERRS.has(res.err) ? 'no-dns' : 'unreachable';
+    out.result = { 'no-file': 'NO-FILE', 'no-dns': 'NO-DNS', 'unreachable': 'UNREACHABLE' }[kind];
     out.detail = res.err ? `fetch failed: ${res.err}` : `HTTP ${res.status}`;
     if (JSON_OUT) console.log(JSON.stringify(out, null, 1));
-    else {
+    else if (kind === 'no-dns') {
+      console.log(`\n  ${domain}`);
+      console.log(`  ⛔ ${domain} does not resolve (${res.err})\n`);
+      console.log('  There is no host here, so there is nothing to publish a file on and');
+      console.log('  nothing to check. If you expected a site at this name, check the spelling');
+      console.log('  and check that the zone still carries a record for it.\n');
+    } else if (kind === 'unreachable') {
+      console.log(`\n  ${domain}`);
+      console.log(`  ⛔ could not reach ${domain} (${res.err})\n`);
+      console.log('  The name resolves but the request failed, so this says nothing either way');
+      console.log('  about whether you publish a security.txt. Retry before concluding anything.\n');
+    } else {
       console.log(`\n  ${domain}`);
       console.log(`  ⛔ no security.txt at /.well-known/security.txt (${out.detail})\n`);
       console.log('  RFC 9116 says the file MUST live at that path. Without it, a researcher');
