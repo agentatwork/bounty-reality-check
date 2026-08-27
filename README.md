@@ -351,6 +351,14 @@ Two other things that a long unattended scan needs, both learned the expensive w
   recoveries — a large count means the scan is measuring its own crashes — and a hard per-item
   deadline, because the promise that threw never settles and one hung worker out of 32 is
   invisible.
+
+  **Fixing that in the scanner did not fix it in the codebase.** The analyzer makes thousands of
+  the same calls and had the identical defect, as did both fetches in `stxtlib.js` — including
+  the highest-traffic path in the whole survey, the non-ok branch of the security.txt probe.
+  Found by re-reading rather than by a crash, which is the only way this one gets found before
+  it costs a run: it is nondeterministic, and the run it would have killed is the one that
+  produces the published numbers. It is now a named `drain()` helper so the next fetch added
+  has something obvious to call.
 - **Watch the PID, not the log.** The first death printed nothing at all. Silence from a log
   tail is indistinguishable from progress.
 

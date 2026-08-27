@@ -166,6 +166,19 @@ function urlVerdict(f) {
   return f.hasA ? 'RESOLVES' : 'NO-ADDRESS';
 }
 
+/**
+ * Consume a response body nobody wants.
+ *
+ * Skipping this leaves undici's parser attached to a socket it can never drain. When one of
+ * those sockets ends while the parser is paused, undici trips `assert(!this.paused)` — thrown
+ * from a socket event, so no try/catch around the `await` can catch it, and the process dies.
+ * It killed the bulk scanner at ~19k domains, and the same defect was still sitting in both of
+ * these functions afterwards: fixing it in one file did not fix it anywhere else.
+ */
+async function drain(r) {
+  try { await r.body?.cancel(); } catch { /* already closed */ }
+}
+
 /** Fetch a portal. Distinguishes "gone" from "refusing me" — see the header comment. */
 async function probePortal(url, timeoutMs = 10000) {
   try {
@@ -175,9 +188,13 @@ async function probePortal(url, timeoutMs = 10000) {
       : (s === 401 || s === 403 || s === 429) ? 'alive_gated'
       : (s === 404 || s === 410) ? 'page_gone'
       : s >= 500 ? 'server_error' : `http_${s}`;
+    await drain(r);
     return { reachable: cls === 'ok' || cls === 'alive_gated', status: s, why: cls };
   } catch (e) {
-    return { reachable: false, why: e.name === 'TimeoutError' ? 'timeout' : (e.cause?.code || e.name || 'err') };
+    const why = e.name === 'TimeoutError' ? 'timeout'
+      : e.cause?.code ? e.cause.code
+      : e.name === 'TypeError' ? 'bad_contact_uri' : (e.name || 'err');
+    return { reachable: false, why };
   }
 }
 
@@ -185,7 +202,10 @@ async function fetchSecurityTxt(domain, timeoutMs = 10000) {
   const url = `https://${domain}/.well-known/security.txt`;
   try {
     const r = await fetch(url, { headers: { 'user-agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
-    if (!r.ok) return { ok: false, status: r.status, url };
+    // A 404 is the NORMAL answer when probing for a well-known file, so this branch runs
+    // constantly — it is the highest-traffic path in the whole survey and the one that must
+    // not leak a socket. See drain().
+    if (!r.ok) { await drain(r); return { ok: false, status: r.status, url }; }
     const body = (await r.text()).slice(0, 32768);
     const parsed = parseSecurityTxt(body);
     return { ok: true, status: r.status, url, final_url: r.url, body, parsed, real: looksReal(body, parsed) };

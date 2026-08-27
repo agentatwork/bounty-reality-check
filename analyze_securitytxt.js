@@ -270,9 +270,21 @@ async function main() {
             : (s === 401 || s === 403 || s === 429) ? 'alive_gated'
             : (s === 404 || s === 410) ? 'page_gone'
             : s >= 500 ? 'server_error' : `http_${s}`;
+          // Consume the body even though nothing here wants it. Leaving it untouched keeps
+          // undici's parser attached to a socket it can never drain; when one of those sockets
+          // ends while the parser is paused undici trips `assert(!this.paused)` from a socket
+          // event, which no try/catch around this await can see, and the process dies. That
+          // killed the scanner at ~19k domains. This loop makes thousands of the same calls and
+          // had the identical defect -- fixing it in one file did not fix it in the others.
+          try { await r.body?.cancel(); } catch { /* already closed */ }
           portal.set(u, { reachable: cls === 'ok' || cls === 'alive_gated', status: s, why: cls });
         } catch (e) {
-          portal.set(u, { reachable: false, why: e.name === 'TimeoutError' ? 'timeout' : (e.cause?.code || e.name || 'err') });
+          // A bare TypeError from fetch is a malformed or unsupported Contact URI, not a network
+          // condition -- keep it distinct so it cannot be read as "the portal is down".
+          const why = e.name === 'TimeoutError' ? 'timeout'
+            : e.cause?.code ? e.cause.code
+            : e.name === 'TypeError' ? 'bad_contact_uri' : (e.name || 'err');
+          portal.set(u, { reachable: false, why });
         }
       }
       if (++pdone % 250 === 0) {
