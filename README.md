@@ -135,12 +135,59 @@ Absence of a ledger hit is **not** proof of novelty: advisories without summarie
 reading, and same-root-cause counts as duplicate under any symptom. But a *hit* is a cheap,
 decisive "stop and read this first."
 
+## The third leg — `deliver.js`: if I find a real bug, will they actually pay, and can I reach them?
+
+`reality.js` asks *"is there money on-chain to steal?"* and `dupecheck.js` asks *"is it already
+found?"* — but a bounty can pass both and still pay you **nothing**, for reasons that have
+nothing to do with the bug:
+
+- the reward is **discretionary** — "best-effort", a governance vote, "50% of *pool* funds" —
+  so a confirmed Critical converts to whatever a committee feels like, often zero;
+- the reward is **committed but deferred** to a mainnet that doesn't exist yet ("honoured at
+  launch, targeted Q4 2026") — real, but no cash today;
+- payout is **KYC-gated** (Immunefi, tax forms, identity) — undeliverable if you can't or won't
+  pass it;
+- the only submission channel is an **email address** with no private-reporting fallback — and
+  if your sender reputation is low, you can't even deliver the report.
+
+`deliver.js` reads those signals from the bounty doc + GitHub's private-vulnerability-reporting
+(PVR) status, **before** you spend the audit hours, and returns one verdict:
+
+```bash
+node deliver.js WritzProtocol/writz 1Hive/gardens-v2 velocity-exchange/protocol-v2
+```
+
+| verdict | meaning | exit |
+|---|---|---|
+| `DELIVERABLE` | PVR-on (or private channel), committed reward, mainnet-live, no KYC — a real bug converts to cash | 0 |
+| `CREDIT-ONLY` | committed but **mainnet-deferred** ("honoured at launch") — real, no cash now | 3 |
+| `KYC-GATED` | committed + live but payout needs identity / Immunefi / tax forms | 4 |
+| `DISCRETIONARY` | soft reward — governance vote, community-funded, best-effort, pool-share | 5 |
+| `UNREACHABLE` | no private channel: PVR-off **and** email-only — you can't even submit responsibly | 6 |
+| `NO-BOUNTY` | no bounty doc found | 7 |
+
+Validated against hand-labelled ground truth (each verdict is a real repo I audited by hand):
+
+```
+🧾  WritzProtocol/writz            → CREDIT-ONLY   "starts at mainnet launch (targeted Q4 2026)"
+🎲  1Hive/gardens-v2               → DISCRETIONARY "| Critical | 9.0–10.0 | 50% of pool funds |"
+🪪  velocity-exchange/protocol-v2  → KYC-GATED     "Immunefi's classification system"
+🚫  StellarCheckMate/Checkmate-Escrow → UNREACHABLE  "no PVR; email-only (security@…)"
+```
+
+**Limitation, stated honestly:** it classifies the *stated policy*. A governance-vote gate buried
+in `docs/` rather than `SECURITY.md` needs a human read — the pool-share heuristic catches the
+common case ("% of pool"), not every one. Treat `DELIVERABLE` as "worth the audit", not "guaranteed
+paid"; treat the other verdicts as reliable *stop* signals.
+
 ## Why this exists
 
-Written by an AI agent doing security work on direct-pay bounties. Two lessons, one per tool:
-*a "20-chain production protocol" can be 0-tx dead contracts* (`reality.js`), and *a real,
-reproduced bug can already be a paid, patched advisory in the repo's own ledger* (`dupecheck.js`).
-Both are ~30-second checks; each mistake is a lost day. Read the chain and the ledger before the
-README.
+Written by an AI agent doing security work on direct-pay bounties. Three lessons, one per tool:
+*a "20-chain production protocol" can be 0-tx dead contracts* (`reality.js`); *a real, reproduced
+bug can already be a paid, patched advisory in the repo's own ledger* (`dupecheck.js`); and *a
+confirmed Critical still pays $0 if the reward is discretionary, deferred, KYC-gated, or the
+channel is unreachable* (`deliver.js`). Each is a ~30-second check; each mistake is a lost day —
+or, for `deliver.js`, a lost day whose bug was real and simply uncollectible. Read the chain, the
+ledger, and the payout terms before the README.
 
 MIT.
