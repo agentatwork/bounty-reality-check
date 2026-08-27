@@ -26,12 +26,48 @@ const fs = require('fs');
 const dns = require('dns');
 const { publicSuffixOf } = require('./psl');
 
-const [, , inPath, outPath, concArg] = process.argv;
+const [, , inPath, outPath, concArg, rankArg] = process.argv;
 if (!inPath || !outPath) {
-  console.error('usage: node analyze_securitytxt.js <scan.jsonl> <out.json> [dnsConcurrency]');
+  console.error('usage: node analyze_securitytxt.js <scan.jsonl> <out.json> [dnsConcurrency] [rank.csv]');
   process.exit(1);
 }
 const CONC = parseInt(concArg || '24', 10);
+const RANK_CSV = rankArg || '/tmp/tranco200k.csv';
+
+/**
+ * Popularity buckets. A single pooled percentage over 200k domains is close to meaningless
+ * here, because the population is not homogeneous: the top of the list is a few thousand
+ * organisations with security teams, and the tail is everybody else. Published adoption
+ * figures disagree wildly (0.7% of the top 1M vs 13% of the top 3k) for exactly this reason —
+ * they are measuring different populations and quoting one number.
+ *
+ * It also decides the central question. If lapsed contacts cluster in the tail, the headline
+ * is that security.txt rots where nobody is watching. If they are flat across rank, the
+ * headline is that publishing the file is no evidence anyone maintains it. Either is a
+ * finding; reporting one pooled average would hide both.
+ */
+const BUCKETS = [
+  ['1-1k', 1, 1000], ['1k-10k', 1001, 10000], ['10k-50k', 10001, 50000],
+  ['50k-100k', 50001, 100000], ['100k-200k', 100001, Infinity],
+];
+const bucketOf = (rank) => {
+  if (!rank) return 'unranked';
+  for (const [name, lo, hi] of BUCKETS) if (rank >= lo && rank <= hi) return name;
+  return 'unranked';
+};
+
+function loadRanks() {
+  const m = new Map();
+  try {
+    for (const line of fs.readFileSync(RANK_CSV, 'utf8').split('\n')) {
+      const c = line.indexOf(',');
+      if (c < 0) continue;
+      const r = parseInt(line.slice(0, c), 10);
+      if (r) m.set(line.slice(c + 1).trim().toLowerCase(), r);
+    }
+  } catch { console.log(`(no rank file at ${RANK_CSV} — rank analysis skipped)`); }
+  return m;
+}
 
 const RESOLVERS = [['google', ['8.8.8.8', '8.8.4.4']], ['cloudflare', ['1.1.1.1', '1.0.0.1']]];
 
@@ -165,11 +201,16 @@ function expiryState(exp, nowMs) {
 
 async function main() {
   const NOW = Date.parse(process.env.SURVEY_NOW || '2026-08-27T00:00:00Z');
+  const ranks = loadRanks();
   const lines = fs.readFileSync(inPath, 'utf8').split('\n').filter(Boolean);
   const files = [];
+  // Adoption needs a denominator PER BUCKET, so count every scanned domain, not just the hits.
+  const scannedByBucket = {}, foundByBucket = {};
   for (const l of lines) {
     let r; try { r = JSON.parse(l); } catch { continue; }
-    if (r.is_security_txt) files.push(r);
+    const b = bucketOf(ranks.get(r.domain));
+    scannedByBucket[b] = (scannedByBucket[b] || 0) + 1;
+    if (r.is_security_txt) { r._rank = ranks.get(r.domain) || null; r._bucket = b; files.push(r); foundByBucket[b] = (foundByBucket[b] || 0) + 1; }
   }
   console.log(`${lines.length} scanned, ${files.length} real security.txt`);
 
@@ -247,6 +288,16 @@ async function main() {
     sites: [],
   };
   const bump = (k, v) => { out[k] = out[k] || {}; out[k][v] = (out[k][v] || 0) + 1; };
+  const bumpB = (b, k) => {
+    out.by_bucket = out.by_bucket || {};
+    out.by_bucket[b] = out.by_bucket[b] || {};
+    out.by_bucket[b][k] = (out.by_bucket[b][k] || 0) + 1;
+  };
+  out.adoption_by_bucket = {};
+  for (const [name] of [...BUCKETS, ['unranked']]) {
+    const s = scannedByBucket[name] || 0, f = foundByBucket[name] || 0;
+    if (s) out.adoption_by_bucket[name] = { scanned: s, security_txt: f, pct: +(100 * f / s).toFixed(2) };
+  }
 
   for (const f of files) {
     const ps = parsedBySite.get(f.domain);
@@ -281,14 +332,23 @@ async function main() {
     const anyPortalWorks = portals.some(c => c.portal_ok === true);
     const reachable = anyEmailWorks || anyPortalWorks;
 
+    const hijE = emails.some(c => c.verdict === 'UNREGISTERED');
+    const hijP = portals.some(c => c.verdict === 'UNREGISTERED');
+
     out.sites.push({
-      site: f.domain, contacts: f.contact.length, kinds,
+      site: f.domain, rank: f._rank, bucket: f._bucket, contacts: f.contact.length, kinds,
       contact_verdicts: cvs, expires: f.expires, expiry: exp, reachable,
-      hijackable_email: emails.some(c => c.verdict === 'UNREGISTERED'),
-      hijackable_portal: portals.some(c => c.verdict === 'UNREGISTERED'),
+      hijackable_email: hijE, hijackable_portal: hijP,
     });
     bump('expiry_distribution', exp);
     bump('reachability', reachable ? 'reachable' : 'NO-WORKING-CONTACT');
+
+    // Same counts, split by popularity. Rates per bucket are computed at the end from
+    // adoption_by_bucket's denominators — never eyeball a count across buckets of unequal size.
+    bumpB(f._bucket, `expiry_${exp}`);
+    bumpB(f._bucket, reachable ? 'reachable' : 'no_working_contact');
+    if (hijE || hijP) bumpB(f._bucket, 'hijackable_site');
+    if (ps.some(p => p.domain && publicSuffixOf(p.domain).registrable !== siteReg)) bumpB(f._bucket, 'has_third_party_contact');
 
     // §2.5.3: a web Contact URI "MUST begin with https://". A plaintext report form is both a
     // spec violation and a real exposure — the report is the sensitive thing being submitted.
@@ -326,6 +386,24 @@ async function main() {
   console.log(`\nsites with a hijackable EMAIL contact:  ${out.sites_with_hijackable_email}`);
   console.log(`sites with a hijackable PORTAL contact: ${out.sites_with_hijackable_portal}`);
   console.log(`sites with NO working contact at all:   ${out.sites_with_no_working_contact} / ${files.length}`);
+
+  // The rank table is the point of the whole 200k run: is a lapsed contact a tail phenomenon,
+  // or does it happen at every level of the list? Rates, not counts — the buckets differ in
+  // size by two orders of magnitude and raw counts would say nothing.
+  console.log('\n--- by popularity bucket (rates over sites WITH a security.txt) ---');
+  console.log('bucket        scanned  sec.txt  adopt%   expired%  noExpires%  3rdParty%  noContact%  hijack');
+  for (const [name] of [...BUCKETS, ['unranked']]) {
+    const a = out.adoption_by_bucket[name];
+    if (!a) continue;
+    const b = (out.by_bucket && out.by_bucket[name]) || {};
+    const n = a.security_txt || 1;
+    const pc = (x) => (100 * (x || 0) / n).toFixed(1).padStart(6);
+    console.log(
+      `${name.padEnd(12)} ${String(a.scanned).padStart(7)} ${String(a.security_txt).padStart(8)} ` +
+      `${a.pct.toFixed(2).padStart(6)} ${pc(b.expiry_expired)}    ${pc(b.expiry_missing)}     ` +
+      `${pc(b.has_third_party_contact)}    ${pc(b.no_working_contact)}      ${String(b.hijackable_site || 0).padStart(5)}`
+    );
+  }
   console.log(`ANALYZE_DONE -> ${outPath}`);
 }
 
