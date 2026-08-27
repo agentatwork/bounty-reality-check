@@ -35,6 +35,22 @@ const CONC = parseInt(concArg || '40', 10);
 const LIMIT = parseInt(limitArg || '0', 10);
 const TIMEOUT_MS = 8000;
 
+// Survive a poisoned socket. Some fraction of 200k hosts will do something that trips an
+// assertion deep inside the HTTP stack -- undici's `assert(!this.paused)` is thrown from a
+// socket event, so no try/catch around the await can see it, and the default action is to
+// kill the process and lose the run. A bulk read-only scanner should treat that the same way
+// it treats a timeout: record nothing for that domain and keep going. Counted and printed,
+// never silently swallowed -- if this number is large, the scan is measuring my own crashes.
+let crashes = 0;
+process.on('uncaughtException', (e) => {
+  crashes++;
+  if (crashes <= 5 || crashes % 100 === 0) console.log(`recovered_uncaught=${crashes} ${e && e.message ? String(e.message).split('\n')[0] : e}`);
+});
+process.on('unhandledRejection', (e) => {
+  crashes++;
+  if (crashes <= 5 || crashes % 100 === 0) console.log(`recovered_rejection=${crashes} ${e && e.message ? e.message : e}`);
+});
+
 /** RFC 9116 §4: fields are `name: value`, case-insensitive, one per line, `#` comments. */
 function parseSecurityTxt(body) {
   const out = { contact: [], expires: null, policy: [], canonical: [], fields: {} };
@@ -72,7 +88,15 @@ async function fetchOne(domain) {
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!r.ok) return { domain, ok: false, status: r.status };
+    // ALWAYS consume or cancel the body. Returning early from a non-ok response without
+    // touching r.body leaves undici's parser attached to a socket it can never drain, and
+    // eventually one of those sockets ends while the parser is paused -- which is an
+    // assert(), not a catchable rejection, and it kills the whole process. Most responses
+    // here ARE non-ok (a 404 is the normal answer), so this path runs constantly.
+    if (!r.ok) {
+      try { await r.body?.cancel(); } catch { /* already closed */ }
+      return { domain, ok: false, status: r.status };
+    }
     const ct = (r.headers.get('content-type') || '').split(';')[0];
     // Cap the read: a soft-404 can be a multi-megabyte SPA, and we only need the head of it.
     const body = (await r.text()).slice(0, 32768);
@@ -91,6 +115,21 @@ async function fetchOne(domain) {
   } catch (e) {
     return { domain, ok: false, err: (e.name === 'TimeoutError' ? 'timeout' : (e.cause?.code || e.name || 'err')) };
   }
+}
+
+/**
+ * Hard outer deadline. AbortSignal.timeout covers a slow server, but not a promise that
+ * never settles at all -- which is exactly what an uncaught socket assertion leaves behind.
+ * One hung worker out of CONC is invisible: throughput drops, nothing errors, and the scan
+ * looks alive right up until every worker is stuck. Always resolve, never reject.
+ */
+function fetchGuarded(domain) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (r) => { if (!settled) { settled = true; clearTimeout(timer); resolve(r); } };
+    const timer = setTimeout(() => finish({ domain, ok: false, err: 'stalled' }), TIMEOUT_MS * 3);
+    fetchOne(domain).then(finish, (e) => finish({ domain, ok: false, err: e?.name || 'threw' }));
+  });
 }
 
 async function main() {
@@ -129,7 +168,7 @@ async function main() {
   async function worker() {
     while (i < domains.length) {
       const d = domains[i++];
-      const r = await fetchOne(d);
+      const r = await fetchGuarded(d);
       if (r.is_security_txt) found++;
       out.write(JSON.stringify(r) + '\n');
       if (++done % 1000 === 0) {
@@ -140,7 +179,7 @@ async function main() {
   }
   await Promise.all(Array.from({ length: CONC }, worker));
   out.end();
-  console.log(`SCAN_DONE scanned=${done} security_txt=${found}`);
+  console.log(`SCAN_DONE scanned=${done} security_txt=${found} recovered_crashes=${crashes}`);
 }
 
 main();
